@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+venv/
+env/
+.venv/
+.env.local
+*.sqlite3
+
+# Env
+.env
+
+# Data
+data/
+*.index
+*.pkl
+
+# Node
+node_modules/
+dist/
+.cache/
+.parcel-cache/
+
+# IDE
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Implementation files
+Implementation_roadmap.md

@@ -1,0 +1,93 @@
+"""
+services/llm.py — Groq LLM client (singleton).
+
+Single public function:
+    generate(context: str, query: str) -> str
+
+Uses the Groq Python SDK. The client is lazily initialised on first call
+and reused for all subsequent requests.
+
+Configuration (from .env via config.py):
+    GROQ_API_KEY   — your Groq API key
+    LLM_MODEL      — model ID (default: llama-3.3-70b-versatile)
+
+Raises:
+    RuntimeError  — if GROQ_API_KEY is not set when generate() is called
+"""
+
+from __future__ import annotations
+
+import logging
+
+from config import settings
+
+log = logging.getLogger(__name__)
+
+SYSTEM_PROMPT = """\
+You are a precise, factual technical assistant.
+
+Rules:
+- Answer using ONLY information from the provided sources.
+- Cite every claim with [SOURCE N] inline (e.g. "Autograd uses dynamic graphs [SOURCE 1].").
+- If the sources do not contain enough information to answer, say so clearly.
+- Never invent facts, version numbers, or API names.
+- Keep your answer concise and well-structured.
+"""
+
+# Lazy singleton — created on first call to generate()
+_client = None
+
+
+def _get_client():
+    global _client
+    if _client is not None:
+        return _client
+
+    if not settings.groq_api_key:
+        raise RuntimeError(
+            "GROQ_API_KEY is not set. Add it to your .env file and restart the server."
+        )
+
+    from groq import Groq
+    _client = Groq(api_key=settings.groq_api_key)
+    log.info("Groq client initialised (model=%s).", settings.llm_model)
+    return _client
+
+
+def generate(context: str, query: str) -> str:
+    """
+    Call Groq to generate an answer grounded in the provided context.
+
+    Args:
+        context: Formatted context string from context.build_context().
+        query:   The user's original question.
+
+    Returns:
+        The model's answer as a plain string (may contain [SOURCE N] citations).
+
+    Raises:
+        RuntimeError: If GROQ_API_KEY is not configured.
+    """
+    client = _get_client()
+
+    user_message = f"Sources:\n\n{context}\n\nQuestion: {query}"
+
+    log.debug("Calling Groq model=%s, context_len=%d chars", settings.llm_model, len(context))
+
+    response = client.chat.completions.create(
+        model=settings.llm_model,
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user",   "content": user_message},
+        ],
+        temperature=0.1,    # low temperature for factual accuracy
+        max_tokens=1024,
+    )
+
+    answer = response.choices[0].message.content or ""
+    log.info(
+        "Groq answered: %d chars, finish_reason=%s",
+        len(answer),
+        response.choices[0].finish_reason,
+    )
+    return answer
