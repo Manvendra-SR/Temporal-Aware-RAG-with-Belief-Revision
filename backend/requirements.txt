@@ -1,3 +1,8 @@
+--extra-index-url https://download.pytorch.org/whl/cu124
+torch==2.6.0+cu124
+torchvision==0.21.0+cu124
+torchaudio==2.6.0+cu124
+
 fastapi==0.111.0
 uvicorn[standard]==0.29.0
 sqlalchemy>=2.0.36
@@ -16,3 +21,6 @@ tiktoken
 
 # Phase 3 — Query + Answer Generation
 groq
+
+# Phase 4 — Temporal Metadata + Version Management
+python-dateutil

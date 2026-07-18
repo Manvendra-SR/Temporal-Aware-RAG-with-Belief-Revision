@@ -1,39 +1,72 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import axios from 'axios'
 
-const DOMAINS = [
-  { value: 'general',      label: 'General' },
-  { value: 'pytorch_docs', label: 'PyTorch Docs' },
-  { value: 'python_docs',  label: 'Python Docs' },
-  { value: 'npm_docs',     label: 'npm Docs' },
-  { value: 'arxiv_cs',     label: 'arXiv CS' },
-  { value: 'legal',        label: 'Legal' },
-]
+// ── Types ──────────────────────────────────────────────────────────────────
 
 interface IngestResult {
   doc_id: string
   title: string
-  domain: string
+  version_string: string
+  published_at: string
+  is_latest: boolean
   chunks_created: number
   ingested_at: string
+  lineage_message: string
 }
+
+interface DocumentRoot {
+  doc_id: string
+  title: string
+  version_string: string | null
+}
+
+type IngestMode = 'new' | 'version'
+
+// ── Component ──────────────────────────────────────────────────────────────
 
 export default function IngestPage() {
   const [file, setFile] = useState<File | null>(null)
+  const [mode, setMode] = useState<IngestMode>('new')
+
+  // New Document fields
   const [title, setTitle] = useState('')
-  const [domain, setDomain] = useState('general')
+
+  // New Version fields
+  const [parentDocs, setParentDocs] = useState<DocumentRoot[]>([])
+  const [parentSearch, setParentSearch] = useState('')
+  const [selectedParent, setSelectedParent] = useState<DocumentRoot | null>(null)
+  const [parentsLoading, setParentsLoading] = useState(false)
+
+  // Shared required fields
+  const [versionString, setVersionString] = useState('')
+  const [publishedAt, setPublishedAt] = useState('')
+
+  // Validation errors
+  const [versionError, setVersionError] = useState('')
+
+  // Submission state
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<IngestResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  // ── Load parent docs when switching to New Version mode ──────────────────
+  useEffect(() => {
+    if (mode !== 'version') return
+    setParentsLoading(true)
+    axios.get<DocumentRoot[]>('/api/v1/documents/roots')
+      .then(r => setParentDocs(r.data))
+      .catch(() => setParentDocs([]))
+      .finally(() => setParentsLoading(false))
+  }, [mode])
+
+  // ── File handling ─────────────────────────────────────────────────────────
   const handleFile = (f: File) => {
     setFile(f)
     setResult(null)
     setError(null)
-    // Auto-fill title from filename if empty
-    if (!title) {
+    if (mode === 'new' && !title) {
       setTitle(f.name.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' '))
     }
   }
@@ -45,27 +78,53 @@ export default function IngestPage() {
     if (f) handleFile(f)
   }
 
+  // ── Version validation ────────────────────────────────────────────────────
+  const validateVersion = (v: string) => {
+    if (!v.trim()) { setVersionError('Version is required.'); return false }
+    if (!/^v?\d[\d._\-]*$/.test(v.trim())) {
+      setVersionError("Must start with a digit or 'v' followed by digits (e.g. 2.2, v1.13.1)")
+      return false
+    }
+    setVersionError('')
+    return true
+  }
+
+  // ── Submit ────────────────────────────────────────────────────────────────
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!file || !title.trim()) return
+    if (!file) return
+    if (mode === 'new' && !title.trim()) return
+    if (mode === 'version' && !selectedParent) return
+    if (!validateVersion(versionString)) return
+    if (!publishedAt) return
 
     setLoading(true)
     setError(null)
     setResult(null)
 
+    const resolvedTitle = mode === 'version' ? selectedParent!.title : title.trim()
+
     const form = new FormData()
     form.append('file', file)
-    form.append('title', title.trim())
-    form.append('domain', domain)
+    form.append('title', resolvedTitle)
+    form.append('version_string', versionString.trim())
+    form.append('published_at', publishedAt)
+    if (mode === 'version' && selectedParent) {
+      form.append('parent_doc_id', selectedParent.doc_id)
+    }
 
     try {
       const { data } = await axios.post<IngestResult>('/api/v1/ingest', form, {
         headers: { 'Content-Type': 'multipart/form-data' },
-        timeout: 120_000,   // embedding can take a few seconds
+        timeout: 120_000,
       })
       setResult(data)
       setFile(null)
       setTitle('')
+      setVersionString('')
+      setPublishedAt('')
+      setSelectedParent(null)
+      setParentSearch('')
       if (fileInputRef.current) fileInputRef.current.value = ''
     } catch (err: unknown) {
       if (axios.isAxiosError(err)) {
@@ -79,12 +138,45 @@ export default function IngestPage() {
     }
   }
 
+  // ── Derived state ─────────────────────────────────────────────────────────
   const fileLabel = file
     ? `${file.name} (${(file.size / 1024).toFixed(1)} KB)`
     : 'Drop a file here or click to browse'
 
   const ext = file?.name.split('.').pop()?.toLowerCase()
   const extColor: Record<string, string> = { pdf: '#f87171', md: '#818cf8', txt: '#34d399' }
+
+  const filteredParents = parentDocs.filter(d =>
+    d.title.toLowerCase().includes(parentSearch.toLowerCase())
+  )
+
+  const canSubmit = !!file &&
+    (mode === 'new' ? !!title.trim() : !!selectedParent) &&
+    !!versionString.trim() && !versionError &&
+    !!publishedAt &&
+    !loading
+
+  // ── Styles ────────────────────────────────────────────────────────────────
+  const inputStyle = {
+    background: 'var(--bg-card)',
+    border: '1px solid var(--border-light)',
+    borderRadius: 'var(--radius-sm)',
+    padding: '9px 12px',
+    color: 'var(--text-primary)',
+    fontSize: '14px',
+    outline: 'none',
+    transition: 'border-color 0.2s',
+    width: '100%',
+    boxSizing: 'border-box' as const,
+  }
+  const labelStyle = {
+    fontSize: '12px',
+    fontWeight: 600 as const,
+    color: 'var(--text-secondary)' as const,
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.5px',
+  }
+  const fieldStyle = { display: 'flex', flexDirection: 'column' as const, gap: '6px' }
 
   return (
     <div>
@@ -152,77 +244,204 @@ export default function IngestPage() {
             />
           </div>
 
-          {/* Title */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <label htmlFor="ingest-title" style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              Title *
-            </label>
+          {/* ── Mode selector ── */}
+          <div style={fieldStyle}>
+            <span style={labelStyle}>Document Type *</span>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              {(['new', 'version'] as IngestMode[]).map(m => (
+                <label
+                  key={m}
+                  style={{
+                    flex: 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '10px 14px',
+                    borderRadius: 'var(--radius-sm)',
+                    border: `1.5px solid ${mode === m ? 'var(--accent-primary)' : 'var(--border-light)'}`,
+                    background: mode === m ? 'rgba(99,102,241,0.08)' : 'var(--bg-card)',
+                    cursor: 'pointer',
+                    transition: 'border-color 0.2s, background 0.2s',
+                    fontSize: '13px',
+                    fontWeight: mode === m ? 600 : 400,
+                    color: mode === m ? 'var(--accent-primary-hover)' : 'var(--text-secondary)',
+                  }}
+                >
+                  <input
+                    type="radio"
+                    name="ingest-mode"
+                    value={m}
+                    checked={mode === m}
+                    onChange={() => { setMode(m); setSelectedParent(null); setParentSearch('') }}
+                    style={{ accentColor: 'var(--accent-primary)' }}
+                  />
+                  {m === 'new' ? '🌱 New Document' : '🔗 New Version'}
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {/* ── New Version: parent selector ── */}
+          {mode === 'version' && (
+            <div style={{ ...fieldStyle, animation: 'fadeIn 0.15s ease' }}>
+              <label style={labelStyle}>Parent Document *</label>
+              {parentsLoading ? (
+                <div style={{ fontSize: '13px', color: 'var(--text-muted)', padding: '8px 0' }}>
+                  Loading existing documents…
+                </div>
+              ) : parentDocs.length === 0 ? (
+                <div style={{
+                  padding: '12px', borderRadius: 'var(--radius-sm)',
+                  background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.25)',
+                  fontSize: '12px', color: '#fbbf24',
+                }}>
+                  No existing documents found. Ingest a document first before uploading a new version.
+                </div>
+              ) : (
+                <>
+                  <input
+                    id="parent-search"
+                    type="text"
+                    placeholder="Search documents…"
+                    value={parentSearch}
+                    onChange={e => setParentSearch(e.target.value)}
+                    style={{ ...inputStyle, marginBottom: '6px' }}
+                    onFocus={e => (e.target.style.borderColor = 'var(--accent-primary)')}
+                    onBlur={e => (e.target.style.borderColor = 'var(--border-light)')}
+                  />
+                  <div style={{
+                    maxHeight: '180px',
+                    overflowY: 'auto',
+                    border: '1px solid var(--border-light)',
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'var(--bg-card)',
+                  }}>
+                    {filteredParents.length === 0 ? (
+                      <div style={{ padding: '10px 14px', fontSize: '12px', color: 'var(--text-muted)' }}>
+                        No documents match your search.
+                      </div>
+                    ) : filteredParents.map(doc => (
+                      <div
+                        key={doc.doc_id}
+                        onClick={() => { setSelectedParent(doc); setParentSearch('') }}
+                        style={{
+                          padding: '9px 14px',
+                          cursor: 'pointer',
+                          borderBottom: '1px solid var(--border)',
+                          background: selectedParent?.doc_id === doc.doc_id
+                            ? 'rgba(99,102,241,0.12)'
+                            : 'transparent',
+                          transition: 'background 0.15s',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                        }}
+                        onMouseEnter={e => { if (selectedParent?.doc_id !== doc.doc_id) (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)' }}
+                        onMouseLeave={e => { if (selectedParent?.doc_id !== doc.doc_id) (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+                      >
+                        <span style={{ fontSize: '13px', color: 'var(--text-primary)', fontWeight: selectedParent?.doc_id === doc.doc_id ? 600 : 400 }}>
+                          {doc.title}
+                        </span>
+                        {doc.version_string && (
+                          <span style={{
+                            padding: '1px 8px', borderRadius: '999px',
+                            background: 'rgba(129,140,248,0.15)', color: '#818cf8',
+                            fontSize: '11px', fontWeight: 700, fontFamily: 'monospace',
+                          }}>
+                            v{doc.version_string}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  {selectedParent && (
+                    <div style={{
+                      padding: '8px 12px', borderRadius: 'var(--radius-sm)',
+                      background: 'rgba(52,211,153,0.08)', border: '1px solid rgba(52,211,153,0.2)',
+                      fontSize: '12px', color: '#34d399', display: 'flex', alignItems: 'center', gap: '6px',
+                    }}>
+                      <span>✓</span>
+                      <span>
+                        Title will be inherited: <strong>{selectedParent.title}</strong>
+                      </span>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          {/* ── New Document: title field ── */}
+          {mode === 'new' && (
+            <div style={{ ...fieldStyle, animation: 'fadeIn 0.15s ease' }}>
+              <label htmlFor="ingest-title" style={labelStyle}>Title *</label>
+              <input
+                id="ingest-title"
+                type="text"
+                value={title}
+                onChange={e => setTitle(e.target.value)}
+                placeholder="PyTorch Docs"
+                required
+                style={inputStyle}
+                onFocus={e => (e.target.style.borderColor = 'var(--accent-primary)')}
+                onBlur={e => (e.target.style.borderColor = 'var(--border-light)')}
+              />
+            </div>
+          )}
+
+          {/* ── Version string ── */}
+          <div style={fieldStyle}>
+            <label htmlFor="ingest-version" style={labelStyle}>Version *</label>
             <input
-              id="ingest-title"
+              id="ingest-version"
               type="text"
-              value={title}
-              onChange={e => setTitle(e.target.value)}
-              placeholder="PyTorch v2.2 Docs"
+              value={versionString}
+              onChange={e => { setVersionString(e.target.value); if (versionError) validateVersion(e.target.value) }}
+              onBlur={e => validateVersion(e.target.value)}
+              placeholder="e.g. 2.2 or 1.13.1 or 2024-03-01"
               required
               style={{
-                background: 'var(--bg-card)',
-                border: '1px solid var(--border-light)',
-                borderRadius: 'var(--radius-sm)',
-                padding: '9px 12px',
-                color: 'var(--text-primary)',
-                fontSize: '14px',
-                outline: 'none',
-                transition: 'border-color 0.2s',
+                ...inputStyle,
+                borderColor: versionError ? 'var(--accent-error)' : 'var(--border-light)',
               }}
+              onFocus={e => (e.target.style.borderColor = versionError ? 'var(--accent-error)' : 'var(--accent-primary)')}
+            />
+            {versionError && (
+              <span style={{ fontSize: '11px', color: 'var(--accent-error)' }}>{versionError}</span>
+            )}
+          </div>
+
+          {/* ── Published date ── */}
+          <div style={fieldStyle}>
+            <label htmlFor="ingest-published" style={labelStyle}>Published Date *</label>
+            <input
+              id="ingest-published"
+              type="date"
+              value={publishedAt}
+              onChange={e => setPublishedAt(e.target.value)}
+              required
+              style={{ ...inputStyle, colorScheme: 'dark' }}
               onFocus={e => (e.target.style.borderColor = 'var(--accent-primary)')}
               onBlur={e => (e.target.style.borderColor = 'var(--border-light)')}
             />
           </div>
 
-          {/* Domain */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <label htmlFor="ingest-domain" style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              Domain
-            </label>
-            <select
-              id="ingest-domain"
-              value={domain}
-              onChange={e => setDomain(e.target.value)}
-              style={{
-                background: 'var(--bg-card)',
-                border: '1px solid var(--border-light)',
-                borderRadius: 'var(--radius-sm)',
-                padding: '9px 12px',
-                color: 'var(--text-primary)',
-                fontSize: '14px',
-                outline: 'none',
-                cursor: 'pointer',
-              }}
-            >
-              {DOMAINS.map(d => (
-                <option key={d.value} value={d.value} style={{ background: 'var(--bg-secondary)' }}>
-                  {d.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Submit */}
+          {/* ── Submit ── */}
           <button
             type="submit"
             id="ingest-submit-btn"
-            disabled={!file || !title.trim() || loading}
+            disabled={!canSubmit}
             style={{
-              background: loading || !file || !title.trim()
-                ? 'var(--bg-hover)'
-                : 'linear-gradient(135deg, var(--accent-primary), #4f46e5)',
+              background: canSubmit
+                ? 'linear-gradient(135deg, var(--accent-primary), #4f46e5)'
+                : 'var(--bg-hover)',
               border: 'none',
               borderRadius: 'var(--radius-sm)',
               padding: '11px 20px',
-              color: loading || !file || !title.trim() ? 'var(--text-muted)' : 'white',
+              color: canSubmit ? 'white' : 'var(--text-muted)',
               fontSize: '14px',
               fontWeight: 600,
-              cursor: !file || !title.trim() || loading ? 'not-allowed' : 'pointer',
+              cursor: canSubmit ? 'pointer' : 'not-allowed',
               transition: 'opacity 0.2s',
               display: 'flex',
               alignItems: 'center',
@@ -263,7 +482,9 @@ export default function IngestPage() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                 {[
                   { label: 'Chunks Created', value: result.chunks_created.toString(), highlight: true },
-                  { label: 'Domain', value: result.domain, highlight: false },
+                  { label: 'Version', value: result.version_string, highlight: false },
+                  { label: 'Published', value: result.published_at, highlight: false },
+                  { label: 'Status', value: result.is_latest ? '✅ Latest' : '📦 Older version', highlight: false },
                   { label: 'Doc ID', value: result.doc_id.slice(0, 12) + '…', highlight: false },
                   { label: 'Ingested At', value: new Date(result.ingested_at).toLocaleTimeString(), highlight: false },
                 ].map(({ label, value, highlight }) => (
@@ -278,6 +499,40 @@ export default function IngestPage() {
                   </div>
                 ))}
               </div>
+
+              {result.lineage_message && result.lineage_message !== 'New document lineage started.' && (
+                <div style={{
+                  background: 'rgba(251,191,36,0.08)',
+                  border: '1px solid rgba(251,191,36,0.3)',
+                  borderRadius: 'var(--radius-sm)',
+                  padding: '10px 14px',
+                  fontSize: '12px',
+                  color: '#fbbf24',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '8px',
+                }}>
+                  <span style={{ flexShrink: 0 }}>🔗</span>
+                  <span>{result.lineage_message}</span>
+                </div>
+              )}
+
+              {result.lineage_message === 'New document lineage started.' && (
+                <div style={{
+                  background: 'rgba(99,102,241,0.08)',
+                  border: '1px solid rgba(99,102,241,0.2)',
+                  borderRadius: 'var(--radius-sm)',
+                  padding: '10px 14px',
+                  fontSize: '12px',
+                  color: 'var(--accent-primary-hover)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                }}>
+                  <span>🌱</span>
+                  <span>New lineage started — future versions will be linked here.</span>
+                </div>
+              )}
 
               <a
                 href="/documents"
@@ -310,7 +565,6 @@ export default function IngestPage() {
             </div>
           )}
 
-          {/* Hint card when idle */}
           {!result && !error && (
             <div style={{
               background: 'var(--bg-card)',
@@ -321,11 +575,12 @@ export default function IngestPage() {
               <div style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.8 }}>
                 <strong style={{ color: 'var(--text-primary)', display: 'block', marginBottom: '8px' }}>What happens on ingest?</strong>
                 <ol style={{ paddingLeft: '18px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <li>Version and date are validated from your input</li>
                   <li>File is parsed → raw text + headings</li>
                   <li>Text split into ≤400-token chunks</li>
                   <li>Each chunk embedded (all-MiniLM-L6-v2)</li>
-                  <li>Vectors indexed in FAISS</li>
-                  <li>Text indexed in BM25</li>
+                  <li>Vectors indexed in FAISS + BM25</li>
+                  <li>Version lineage linked to parent document (if selected)</li>
                   <li>Stored in PostgreSQL</li>
                 </ol>
               </div>
@@ -334,8 +589,10 @@ export default function IngestPage() {
         </div>
       </div>
 
-      {/* Spin animation */}
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+      `}</style>
     </div>
   )
 }

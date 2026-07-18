@@ -6,7 +6,6 @@ Columns that aren't populated yet simply hold NULL — no migrations needed.
 
 Phase 1: Document, Chunk
 Phase 3: QueryLog         (added here now so create_all handles it automatically)
-Phase 4: DomainConfig     (added here now)
 Phase 6: ConflictPair     (added here now)
 """
 
@@ -56,11 +55,9 @@ class Document(Base):
         UUID(as_uuid=False), primary_key=True, default=_uuid
     )
     title: Mapped[str] = mapped_column(String(512), nullable=False)
-    source_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     source_type: Mapped[str | None] = mapped_column(
         String(32), nullable=True
     )  # "pdf" | "md" | "txt"
-    domain: Mapped[str] = mapped_column(String(128), nullable=False, default="general")
 
     # Temporal / version metadata (Phase 4+)
     version_string: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -188,27 +185,6 @@ class QueryLog(Base):
 
     def __repr__(self) -> str:
         return f"<QueryLog {self.query_id[:8]} latency={self.latency_ms}ms>"
-
-
-# ---------------------------------------------------------------------------
-# DomainConfig  (Phase 4 — seeded at startup)
-# ---------------------------------------------------------------------------
-
-
-class DomainConfig(Base):
-    """Per-domain half-life configuration for temporal decay scoring."""
-
-    __tablename__ = "domain_config"
-
-    domain: Mapped[str] = mapped_column(String(128), primary_key=True)
-    half_life_days: Mapped[int] = mapped_column(Integer, nullable=False, default=365)
-    description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=_now, onupdate=_now
-    )
-
-    def __repr__(self) -> str:
-        return f"<DomainConfig {self.domain} half_life={self.half_life_days}d>"
 
 
 # ---------------------------------------------------------------------------

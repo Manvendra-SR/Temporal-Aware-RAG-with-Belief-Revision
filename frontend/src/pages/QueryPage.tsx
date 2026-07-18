@@ -7,7 +7,6 @@ import axios from 'axios'
 interface SourceResult {
   chunk_id: string
   doc_title: string
-  domain: string
   snippet: string
   bm25_score: number
   semantic_score: number
@@ -26,18 +25,6 @@ interface QueryResponse {
   latency_ms: number
   sources: SourceResult[]
 }
-
-// ── Constants ──────────────────────────────────────────────────────────────
-
-const DOMAINS = [
-  { value: '',             label: 'All Domains' },
-  { value: 'general',      label: 'General' },
-  { value: 'pytorch_docs', label: 'PyTorch' },
-  { value: 'python_docs',  label: 'Python' },
-  { value: 'npm_docs',     label: 'npm' },
-  { value: 'arxiv_cs',     label: 'arXiv CS' },
-  { value: 'legal',        label: 'Legal' },
-]
 
 // ── Sub-components ─────────────────────────────────────────────────────────
 
@@ -59,12 +46,6 @@ function ScoreBar({ label, value, color }: { label: string; value: number; color
 function SourceCard({ source, index }: { source: SourceResult; index: number }) {
   const [expanded, setExpanded] = useState(false)
 
-  const domainColor: Record<string, string> = {
-    pytorch_docs: '#f97316', python_docs: '#3b82f6', npm_docs: '#ef4444',
-    arxiv_cs: '#8b5cf6', legal: '#f59e0b', general: '#6366f1',
-  }
-  const dColor = domainColor[source.domain] ?? '#6366f1'
-
   return (
     <div style={{
       background: 'var(--bg-card)',
@@ -76,22 +57,12 @@ function SourceCard({ source, index }: { source: SourceResult; index: number }) 
       gap: '10px',
       transition: 'border-color 0.2s',
     }}
-      onMouseEnter={e => (e.currentTarget.style.borderColor = dColor + '60')}
+      onMouseEnter={e => (e.currentTarget.style.borderColor = 'rgba(99,102,241,0.5)')}
       onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}
     >
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-        <div style={{
-          background: dColor + '20', color: dColor,
-          borderRadius: '999px', padding: '2px 8px',
-          fontSize: '10px', fontWeight: 700, textTransform: 'uppercase',
-          letterSpacing: '0.4px', flexShrink: 0, marginTop: '2px',
-        }}>
-          {source.domain}
-        </div>
-        <div style={{ fontWeight: 600, fontSize: '12px', color: 'var(--text-primary)', lineHeight: 1.4 }}>
-          [{index}] {source.doc_title}
-        </div>
+      <div style={{ fontWeight: 600, fontSize: '12px', color: 'var(--text-primary)', lineHeight: 1.4 }}>
+        [{index}] {source.doc_title}
       </div>
 
       {/* Snippet */}
@@ -134,7 +105,6 @@ function SourceCard({ source, index }: { source: SourceResult; index: number }) 
 
 export default function QueryPage() {
   const [queryText, setQueryText] = useState('')
-  const [domainFilter, setDomainFilter] = useState('')
   const [maxChunks, setMaxChunks] = useState(20)
   const [retrieveOnly, setRetrieveOnly] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -152,7 +122,6 @@ export default function QueryPage() {
     try {
       const { data } = await axios.post<QueryResponse>('/api/v1/query', {
         query: queryText.trim(),
-        domain_filter: domainFilter || null,
         max_chunks: maxChunks,
         retrieve_only: retrieveOnly,
       }, { timeout: 60_000 })
@@ -201,22 +170,6 @@ export default function QueryPage() {
               onFocus={e => (e.target.style.borderColor = 'var(--accent-primary)')}
               onBlur={e => (e.target.style.borderColor = 'var(--border-light)')}
             />
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <label htmlFor="query-domain" style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              Domain Filter
-            </label>
-            <select
-              id="query-domain"
-              value={domainFilter}
-              onChange={e => setDomainFilter(e.target.value)}
-              style={{ background: 'var(--bg-card)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-sm)', padding: '8px 12px', color: 'var(--text-primary)', fontSize: '13px', cursor: 'pointer' }}
-            >
-              {DOMAINS.map(d => (
-                <option key={d.value} value={d.value} style={{ background: 'var(--bg-secondary)' }}>{d.label}</option>
-              ))}
-            </select>
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>

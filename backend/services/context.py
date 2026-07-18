@@ -4,10 +4,10 @@ services/context.py — Context string builder for the LLM prompt.
 build_context(chunks, budget) → (context_str, n_sources_included)
 
 Output format:
-    [SOURCE 1 | pytorch_docs]
+    [SOURCE 1 | PyTorch v2.2 Docs]
     <content of chunk 1>
 
-    [SOURCE 2 | arxiv_cs]
+    [SOURCE 2 | Attention Is All You Need]
     <content of chunk 2>
 
     …
@@ -49,7 +49,7 @@ def build_context(chunks: list[CandidateChunk], budget: int = 3000) -> tuple[str
     included = 0
 
     for i, chunk in enumerate(chunks, start=1):
-        header = f"[SOURCE {i} | {chunk.domain}]"
+        header = f"[SOURCE {i} | {chunk.doc_title}]"
         block = f"{header}\n{chunk.content}"
         block_tokens = _count_tokens(block)
 

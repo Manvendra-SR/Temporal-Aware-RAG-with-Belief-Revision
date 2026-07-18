@@ -33,7 +33,7 @@ def load() -> None:
         return
     log.info("Loading embedding model '%s' …", MODEL_NAME)
     from sentence_transformers import SentenceTransformer
-    _model = SentenceTransformer(MODEL_NAME)
+    _model = SentenceTransformer(MODEL_NAME, device="cuda")
     log.info("Embedding model loaded (dim=%d).", _model.get_sentence_embedding_dimension())
 
 

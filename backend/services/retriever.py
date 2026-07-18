@@ -1,15 +1,14 @@
 """
 services/retriever.py — Hybrid BM25 + Dense retrieval with RRF fusion.
 
-hybrid_retrieve(query, db, k, domain_filter) → List[CandidateChunk]
+hybrid_retrieve(query, db, k) → List[CandidateChunk]
 
 Pipeline:
   1. BM25 keyword search  → top-50 chunk_ids + scores
   2. Dense vector search  → top-50 faiss_ids + L2 distances
   3. RRF merge            → combined score per chunk
   4. Fetch DB metadata    → CandidateChunk dataclass
-  5. Optional domain filter applied post-fetch
-  6. Return top-k sorted by rrf_score descending
+  5. Return top-k sorted by rrf_score descending
 """
 
 from __future__ import annotations
@@ -35,7 +34,6 @@ class CandidateChunk:
     faiss_id: int
     doc_id: str
     doc_title: str
-    domain: str
     content: str
     content_snippet: str
     section_heading: str | None
@@ -48,16 +46,14 @@ def hybrid_retrieve(
     query: str,
     db: Session,
     k: int = 20,
-    domain_filter: str | None = None,
 ) -> list[CandidateChunk]:
     """
     Retrieve the top-k most relevant chunks for `query` using hybrid search.
 
     Args:
-        query:         Natural language query string.
-        db:            Active SQLAlchemy session.
-        k:             Number of results to return.
-        domain_filter: If set, only return chunks from this domain.
+        query:  Natural language query string.
+        db:     Active SQLAlchemy session.
+        k:      Number of results to return.
 
     Returns:
         List of CandidateChunk sorted descending by rrf_score.
@@ -116,10 +112,6 @@ def hybrid_retrieve(
     for chunk_row, doc_row in rows:
         cid = chunk_row.chunk_id
 
-        # Skip if domain filter is active
-        if domain_filter and doc_row.domain != domain_filter:
-            continue
-
         dist = dense_distance_map.get(cid, 1e6)
         semantic = 1.0 / (1.0 + dist)    # convert L2 distance to similarity
 
@@ -128,7 +120,6 @@ def hybrid_retrieve(
             faiss_id=chunk_row.faiss_index_id or -1,
             doc_id=doc_row.doc_id,
             doc_title=doc_row.title,
-            domain=doc_row.domain,
             content=chunk_row.content,
             content_snippet=chunk_row.content_snippet or chunk_row.content[:200],
             section_heading=chunk_row.section_heading,

@@ -33,7 +33,6 @@ router = APIRouter(tags=["query"])
 
 class QueryRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=2000)
-    domain_filter: Optional[str] = None
     max_chunks: int = Field(default=20, ge=1, le=50)
     retrieve_only: bool = False
 
@@ -45,7 +44,6 @@ class SourceResult(BaseModel):
     """
     chunk_id: str
     doc_title: str
-    domain: str
     snippet: str
     bm25_score: float
     semantic_score: float
@@ -92,7 +90,6 @@ def query_endpoint(
         query=req.query,
         db=db,
         k=req.max_chunks,
-        domain_filter=req.domain_filter,
     )
 
     if not candidates:
@@ -129,7 +126,6 @@ def query_endpoint(
         SourceResult(
             chunk_id=c.chunk_id,
             doc_title=c.doc_title,
-            domain=c.domain,
             snippet=c.content_snippet,
             bm25_score=round(c.bm25_score, 4),
             semantic_score=c.semantic_score,
