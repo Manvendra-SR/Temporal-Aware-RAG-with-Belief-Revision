@@ -132,6 +132,10 @@ class Chunk(Base):
     section_heading: Mapped[str | None] = mapped_column(String(512), nullable=True)
     token_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
+    # Character offsets in the original parsed text (for diffing / highlighting)
+    char_start: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    char_end: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     # Temporal validity (Phase 4+)
     valid_from: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True

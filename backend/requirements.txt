@@ -18,6 +18,7 @@ faiss-cpu
 rank-bm25
 pymupdf
 tiktoken
+pysbd
 
 # Phase 3 — Query + Answer Generation
 groq

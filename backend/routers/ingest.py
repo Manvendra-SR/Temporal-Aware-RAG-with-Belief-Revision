@@ -189,7 +189,7 @@ async def ingest_document(
     log.info("Parsed '%s': %d chars, %d headings.", filename, len(parsed.text), len(parsed.headings))
 
     # ── 4. Chunk ────────────────────────────────────────────────────────────
-    chunks = do_chunk(parsed.text, parsed.headings)
+    chunks = do_chunk(parsed.text, parsed.headings, embedder=embedder)
     if not chunks:
         raise HTTPException(status_code=422, detail="No text content could be extracted from the file.")
 
@@ -233,6 +233,8 @@ async def ingest_document(
             content_snippet=chunk_data.content_snippet,
             section_heading=chunk_data.section_heading,
             token_count=chunk_data.token_count,
+            char_start=chunk_data.char_start,
+            char_end=chunk_data.char_end,
             ingested_at=now,
             valid_from=published_at_dt,
         ))
