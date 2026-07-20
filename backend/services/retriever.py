@@ -7,14 +7,16 @@ Pipeline:
   1. BM25 keyword search  → top-50 chunk_ids + scores
   2. Dense vector search  → top-50 faiss_ids + L2 distances
   3. RRF merge            → combined score per chunk
-  4. Fetch DB metadata    → CandidateChunk dataclass
+  4. Fetch DB metadata    → CandidateChunk dataclass (incl. temporal fields)
   5. Return top-k sorted by rrf_score descending
+  (Phase 5: temporal_reranker re-sorts these before they are returned by query.py)
 """
 
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime
 
 from sqlalchemy.orm import Session
 
@@ -40,6 +42,20 @@ class CandidateChunk:
     bm25_score: float
     semantic_score: float   # converted from L2 distance: 1 / (1 + distance)
     rrf_score: float
+
+    # ── Phase 5: temporal metadata (populated from DB join) ──────────────────
+    valid_from: datetime | None = None
+    valid_to: datetime | None = None
+    is_superseded: bool = False
+    version_string: str | None = None
+    published_at: datetime | None = None
+    is_latest: bool = True
+
+    # ── Phase 5: scores computed by temporal_reranker (None until reranked) ──
+    temporal_score: float | None = None
+    version_boost: float | None = None
+    latest_bonus: float | None = None
+    composite_score: float | None = None
 
 
 def hybrid_retrieve(
@@ -126,6 +142,13 @@ def hybrid_retrieve(
             bm25_score=bm25_score_map.get(cid, 0.0),
             semantic_score=round(semantic, 4),
             rrf_score=round(rrf_scores[cid], 6),
+            # ── Phase 5: temporal metadata ────────────────────────────────
+            valid_from=chunk_row.valid_from,
+            valid_to=chunk_row.valid_to,
+            is_superseded=bool(chunk_row.is_superseded),
+            version_string=doc_row.version_string,
+            published_at=doc_row.published_at,
+            is_latest=bool(doc_row.is_latest),
         ))
 
     # Sort final list by rrf_score descending, take top-k

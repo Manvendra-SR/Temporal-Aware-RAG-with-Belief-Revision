@@ -20,7 +20,9 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models import QueryLog
 from services.context import build_context
+from services.query_analyzer import QueryAnalysis, analyze as analyze_query
 from services.retriever import CandidateChunk, hybrid_retrieve
+from services.temporal_reranker import rerank as temporal_rerank
 
 log = logging.getLogger(__name__)
 
@@ -63,6 +65,8 @@ class QueryResponse(BaseModel):
     answer: Optional[str]
     latency_ms: int
     sources: list[SourceResult]
+    # Phase 5+: version hint extracted from query (null if none detected)
+    version_hint: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -92,6 +96,11 @@ def query_endpoint(
         k=req.max_chunks,
     )
 
+    # ── 1b. Temporal rerank ───────────────────────────────────────────
+    analysis: QueryAnalysis = analyze_query(req.query)
+    if candidates:
+        candidates = temporal_rerank(candidates, analysis, db)
+
     if not candidates:
         latency_ms = int((time.monotonic() - t_start) * 1000)
         _write_log(db, query_id, req.query, None, latency_ms, [])
@@ -100,6 +109,7 @@ def query_endpoint(
             answer=None,
             latency_ms=latency_ms,
             sources=[],
+            version_hint=analysis.version_hint,
         )
 
     # ── 2. Build context ─────────────────────────────────────────────────────
@@ -130,6 +140,14 @@ def query_endpoint(
             bm25_score=round(c.bm25_score, 4),
             semantic_score=c.semantic_score,
             rrf_score=c.rrf_score,
+            # Phase 5 temporal fields
+            version_string=c.version_string,
+            published_at=(
+                c.published_at.strftime("%Y-%m-%d") if c.published_at else None
+            ),
+            is_latest=c.is_latest,
+            temporal_score=c.temporal_score,
+            composite_score=c.composite_score,
         )
         for c in candidates
     ]
@@ -142,6 +160,7 @@ def query_endpoint(
         answer=answer,
         latency_ms=latency_ms,
         sources=sources,
+        version_hint=analysis.version_hint,
     )
 
 

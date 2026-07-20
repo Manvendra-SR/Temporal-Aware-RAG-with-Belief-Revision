@@ -24,6 +24,8 @@ interface QueryResponse {
   answer: string | null
   latency_ms: number
   sources: SourceResult[]
+  // Phase 5+: version hint extracted from the query string
+  version_hint?: string | null
 }
 
 // ── Sub-components ─────────────────────────────────────────────────────────
@@ -46,6 +48,8 @@ function ScoreBar({ label, value, color }: { label: string; value: number; color
 function SourceCard({ source, index }: { source: SourceResult; index: number }) {
   const [expanded, setExpanded] = useState(false)
 
+  const hasTemporalData = source.temporal_score !== null && source.temporal_score !== undefined
+
   return (
     <div style={{
       background: 'var(--bg-card)',
@@ -56,14 +60,48 @@ function SourceCard({ source, index }: { source: SourceResult; index: number }) 
       flexDirection: 'column',
       gap: '10px',
       transition: 'border-color 0.2s',
+      position: 'relative',
     }}
       onMouseEnter={e => (e.currentTarget.style.borderColor = 'rgba(99,102,241,0.5)')}
       onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}
     >
+      {/* Version chip — top-right */}
+      {source.version_string && (
+        <div style={{
+          position: 'absolute', top: '10px', right: '10px',
+          background: source.is_latest ? 'rgba(52,211,153,0.15)' : 'rgba(245,158,11,0.12)',
+          color: source.is_latest ? 'var(--accent-success)' : '#f59e0b',
+          borderRadius: '999px', padding: '2px 8px',
+          fontSize: '10px', fontWeight: 700, letterSpacing: '0.3px',
+        }}>
+          v{source.version_string}
+        </div>
+      )}
+
       {/* Header */}
-      <div style={{ fontWeight: 600, fontSize: '12px', color: 'var(--text-primary)', lineHeight: 1.4 }}>
+      <div style={{ fontWeight: 600, fontSize: '12px', color: 'var(--text-primary)', lineHeight: 1.4, paddingRight: source.version_string ? '64px' : 0 }}>
         [{index}] {source.doc_title}
       </div>
+
+      {/* Temporal meta row — date + latest indicator */}
+      {hasTemporalData && (
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+          {source.published_at && (
+            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+              📅 Valid from: <strong style={{ color: 'var(--text-secondary)' }}>{source.published_at}</strong>
+            </span>
+          )}
+          {source.is_latest && (
+            <span style={{ fontSize: '10px', color: 'var(--accent-success)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--accent-success)', display: 'inline-block' }} />
+              Latest
+            </span>
+          )}
+          {source.is_latest === false && (
+            <span style={{ fontSize: '10px', color: '#f59e0b', fontWeight: 600 }}>⚠ Superseded</span>
+          )}
+        </div>
+      )}
 
       {/* Snippet */}
       <div
@@ -81,17 +119,18 @@ function SourceCard({ source, index }: { source: SourceResult; index: number }) 
 
       {/* Score bars */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-        <ScoreBar label="BM25"     value={source.bm25_score}     color="#f59e0b" />
-        <ScoreBar label="Semantic" value={source.semantic_score}  color="#06b6d4" />
-        <ScoreBar label="RRF"      value={source.rrf_score * 60}  color="#6366f1" />
+        <ScoreBar label="BM25"      value={source.bm25_score}          color="#f59e0b" />
+        <ScoreBar label="Semantic"  value={source.semantic_score}       color="#06b6d4" />
+        <ScoreBar label="RRF"       value={source.rrf_score * 60}       color="#6366f1" />
+        {hasTemporalData && (
+          <ScoreBar label="Temporal" value={source.temporal_score!}     color="#f97316" />
+        )}
+        {source.composite_score !== null && source.composite_score !== undefined && (
+          <ScoreBar label="Composite" value={source.composite_score}    color="#a855f7" />
+        )}
       </div>
 
-      {/* Future phase badges (hidden until populated) */}
-      {source.is_latest !== null && source.is_latest !== undefined && (
-        <div style={{ fontSize: '10px', color: source.is_latest ? 'var(--accent-success)' : '#f59e0b', fontWeight: 600 }}>
-          {source.is_latest ? '✓ Latest version' : '⚠ Older version'}
-        </div>
-      )}
+      {/* Conflict badge */}
       {source.has_conflict && (
         <div style={{ fontSize: '10px', color: '#ef4444', fontWeight: 600 }}>
           ⚡ Conflict detected
@@ -227,7 +266,7 @@ export default function QueryPage() {
             }}>
               <div style={{ width: '36px', height: '36px', border: '3px solid var(--border)', borderTopColor: 'var(--accent-primary)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
               <p style={{ color: 'var(--text-muted)', fontSize: '13px' }}>
-                {retrieveOnly ? 'Retrieving chunks…' : 'Retrieving → building context → asking Groq…'}
+                {retrieveOnly ? 'Retrieving chunks…' : 'Retrieving → temporal rerank → building context → asking Groq…'}
               </p>
             </div>
           )}
@@ -244,7 +283,25 @@ export default function QueryPage() {
 
           {result && !loading && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              {/* Latency + meta */}
+              
+              {/* ── Version-hint banner ── */}
+              {result.version_hint && (
+                <div style={{
+                  background: 'rgba(99,102,241,0.1)',
+                  border: '1px solid rgba(99,102,241,0.3)',
+                  borderRadius: 'var(--radius-sm)',
+                  padding: '8px 14px',
+                  fontSize: '12px', color: 'var(--accent-primary-hover)',
+                  display: 'flex', alignItems: 'center', gap: '8px',
+                }}>
+                  <span>🔍</span>
+                  <span>
+                    Showing results pinned to version <strong>v{result.version_hint}</strong>
+                  </span>
+                </div>
+              )}
+
+              {/* Latency + meta badges */}
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                 <span style={{ background: 'rgba(99,102,241,0.12)', color: 'var(--accent-primary-hover)', borderRadius: '999px', padding: '3px 10px', fontSize: '11px', fontWeight: 600 }}>
                   ⏱ {result.latency_ms} ms
@@ -314,7 +371,9 @@ export default function QueryPage() {
               <strong style={{ color: 'var(--text-secondary)', display: 'block', marginBottom: '8px' }}>Score bars explained</strong>
               <div>🟡 BM25 — keyword match</div>
               <div>🔵 Semantic — embedding similarity</div>
-              <div>🟣 RRF — fused rank (used for ordering)</div>
+              <div>🟣 RRF — fused rank (pre-rerank order)</div>
+              <div>🟠 Temporal — freshness decay score</div>
+              <div style={{ color: '#a855f7' }}>🟤 Composite — final reranked score</div>
             </div>
           )}
         </div>
