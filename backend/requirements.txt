@@ -25,3 +25,8 @@ groq
 
 # Phase 4 — Temporal Metadata + Version Management
 python-dateutil
+
+# Phase 6 — Conflict Detection (no new packages needed)
+# sentence-transformers already ships CrossEncoder support.
+# The NLI model (cross-encoder/nli-deberta-v3-small) is downloaded
+# from Hugging Face Hub on first startup (~80 MB, then cached locally).

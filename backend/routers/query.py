@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 from models import QueryLog
+from services.conflict_detector import ConflictResult, detect as detect_conflicts
 from services.context import build_context
 from services.query_analyzer import QueryAnalysis, analyze as analyze_query
 from services.retriever import CandidateChunk, hybrid_retrieve
@@ -60,6 +61,14 @@ class SourceResult(BaseModel):
     has_conflict: Optional[bool] = None
 
 
+class ConflictInfo(BaseModel):
+    """Minimal conflict pair info returned inline with each query response."""
+    chunk_id_a: str
+    chunk_id_b: str
+    conflict_type: str
+    nli_score: float
+
+
 class QueryResponse(BaseModel):
     query_id: str
     answer: Optional[str]
@@ -67,6 +76,9 @@ class QueryResponse(BaseModel):
     sources: list[SourceResult]
     # Phase 5+: version hint extracted from query (null if none detected)
     version_hint: Optional[str] = None
+    # Phase 6+: conflict detection results
+    conflicts_detected: int = 0
+    conflict_pairs: list[ConflictInfo] = []
 
 
 # ---------------------------------------------------------------------------
@@ -81,6 +93,8 @@ def query_endpoint(
     """
     Full RAG pipeline:
         1. Hybrid retrieve (BM25 + FAISS + RRF)
+        1b. Temporal rerank
+        1c. Conflict detection
         2. Build context string (token-budgeted)
         3. Generate answer via Groq (unless retrieve_only=true)
         4. Log to query_log table
@@ -103,7 +117,7 @@ def query_endpoint(
 
     if not candidates:
         latency_ms = int((time.monotonic() - t_start) * 1000)
-        _write_log(db, query_id, req.query, None, latency_ms, [])
+        _write_log(db, query_id, req.query, None, latency_ms, [], 0)
         return QueryResponse(
             query_id=query_id,
             answer=None,
@@ -111,6 +125,18 @@ def query_endpoint(
             sources=[],
             version_hint=analysis.version_hint,
         )
+
+    # ── 1c. Conflict detection ────────────────────────────────────────────────
+    conflicts: list[ConflictResult] = detect_conflicts(
+        candidates=candidates[:20],
+        db=db,
+        query_id=query_id,
+    )
+    # Build a set of chunk_ids that are part of any conflict
+    conflicted_ids: set[str] = set()
+    for cr in conflicts:
+        conflicted_ids.add(cr.chunk_id_a)
+        conflicted_ids.add(cr.chunk_id_b)
 
     # ── 2. Build context ─────────────────────────────────────────────────────
     context, _ = build_context(candidates, budget=3000)
@@ -148,12 +174,14 @@ def query_endpoint(
             is_latest=c.is_latest,
             temporal_score=c.temporal_score,
             composite_score=c.composite_score,
+            # Phase 6: flag chunks that appear in any conflict pair
+            has_conflict=(c.chunk_id in conflicted_ids),
         )
         for c in candidates
     ]
 
     # ── 5. Log to DB ─────────────────────────────────────────────────────────
-    _write_log(db, query_id, req.query, answer, latency_ms, candidates)
+    _write_log(db, query_id, req.query, answer, latency_ms, candidates, len(conflicts))
 
     return QueryResponse(
         query_id=query_id,
@@ -161,6 +189,16 @@ def query_endpoint(
         latency_ms=latency_ms,
         sources=sources,
         version_hint=analysis.version_hint,
+        conflicts_detected=len(conflicts),
+        conflict_pairs=[
+            ConflictInfo(
+                chunk_id_a=cr.chunk_id_a,
+                chunk_id_b=cr.chunk_id_b,
+                conflict_type=cr.conflict_type,
+                nli_score=cr.nli_score,
+            )
+            for cr in conflicts
+        ],
     )
 
 
@@ -175,6 +213,7 @@ def _write_log(
     answer: Optional[str],
     latency_ms: int,
     candidates: list[CandidateChunk],
+    conflicts_detected: int = 0,
 ) -> None:
     """Write a row to the query_log table."""
     try:
@@ -186,7 +225,7 @@ def _write_log(
             retrieved_chunk_ids=chunk_ids,
             answer_text=answer,
             latency_ms=latency_ms,
-            conflicts_detected=0,
+            conflicts_detected=conflicts_detected,
         ))
         db.commit()
     except Exception as exc:

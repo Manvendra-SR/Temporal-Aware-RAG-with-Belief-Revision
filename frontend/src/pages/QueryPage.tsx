@@ -19,13 +19,23 @@ interface SourceResult {
   has_conflict?: boolean | null
 }
 
+interface ConflictInfo {
+  chunk_id_a: string
+  chunk_id_b: string
+  conflict_type: string
+  nli_score: number
+}
+
 interface QueryResponse {
   query_id: string
   answer: string | null
   latency_ms: number
   sources: SourceResult[]
-  // Phase 5+: version hint extracted from the query string
+  // Phase 5+
   version_hint?: string | null
+  // Phase 6+
+  conflicts_detected?: number
+  conflict_pairs?: ConflictInfo[]
 }
 
 // ── Sub-components ─────────────────────────────────────────────────────────
@@ -49,11 +59,12 @@ function SourceCard({ source, index }: { source: SourceResult; index: number }) 
   const [expanded, setExpanded] = useState(false)
 
   const hasTemporalData = source.temporal_score !== null && source.temporal_score !== undefined
+  const isConflicted = !!source.has_conflict
 
   return (
     <div style={{
       background: 'var(--bg-card)',
-      border: '1px solid var(--border)',
+      border: isConflicted ? '1px solid rgba(245,158,11,0.6)' : '1px solid var(--border)',
       borderRadius: 'var(--radius-md)',
       padding: '14px',
       display: 'flex',
@@ -62,8 +73,8 @@ function SourceCard({ source, index }: { source: SourceResult; index: number }) 
       transition: 'border-color 0.2s',
       position: 'relative',
     }}
-      onMouseEnter={e => (e.currentTarget.style.borderColor = 'rgba(99,102,241,0.5)')}
-      onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}
+      onMouseEnter={e => (e.currentTarget.style.borderColor = isConflicted ? 'rgba(245,158,11,0.9)' : 'rgba(99,102,241,0.5)')}
+      onMouseLeave={e => (e.currentTarget.style.borderColor = isConflicted ? 'rgba(245,158,11,0.6)' : 'var(--border)')}
     >
       {/* Version chip — top-right */}
       {source.version_string && (
@@ -131,9 +142,21 @@ function SourceCard({ source, index }: { source: SourceResult; index: number }) 
       </div>
 
       {/* Conflict badge */}
-      {source.has_conflict && (
-        <div style={{ fontSize: '10px', color: '#ef4444', fontWeight: 600 }}>
-          ⚡ Conflict detected
+      {isConflicted && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: '6px',
+          fontSize: '10px', color: '#f59e0b', fontWeight: 700,
+          background: 'rgba(245,158,11,0.08)',
+          border: '1px solid rgba(245,158,11,0.25)',
+          borderRadius: '4px', padding: '4px 8px',
+        }}>
+          <span style={{
+            width: '14px', height: '14px', borderRadius: '50%',
+            background: '#f59e0b', color: '#000',
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: '9px', fontWeight: 900, flexShrink: 0,
+          }}>!</span>
+          Conflicts with another retrieved source
         </div>
       )}
     </div>
@@ -284,6 +307,28 @@ export default function QueryPage() {
           {result && !loading && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               
+              {/* ── Conflict banner ── */}
+              {(result.conflicts_detected ?? 0) > 0 && (
+                <div style={{
+                  background: 'rgba(245,158,11,0.08)',
+                  border: '1px solid rgba(245,158,11,0.35)',
+                  borderRadius: 'var(--radius-sm)',
+                  padding: '10px 14px',
+                  fontSize: '12px', color: '#f59e0b',
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px',
+                }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span>⚠</span>
+                    <span>
+                      Conflicting information found across <strong>{result.conflicts_detected}</strong> source{result.conflicts_detected !== 1 ? ' pairs' : ''}. Verify against primary sources.
+                    </span>
+                  </span>
+                  <a href="/conflicts" style={{ color: '#f59e0b', fontSize: '11px', fontWeight: 700, textDecoration: 'underline', whiteSpace: 'nowrap' }}>
+                    View details →
+                  </a>
+                </div>
+              )}
+
               {/* ── Version-hint banner ── */}
               {result.version_hint && (
                 <div style={{

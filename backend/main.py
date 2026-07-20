@@ -21,7 +21,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from config import settings
 from database import Base, engine
 from routers import health, ingest, query
-from services import embedder, faiss_store, bm25_store
+from routers import conflicts as conflicts_router
+from services import embedder, faiss_store, bm25_store, nli
 
 # ── Logging ─────────────────────────────────────────────────────────────────
 
@@ -54,6 +55,13 @@ async def lifespan(app: FastAPI):
     faiss_store.load()
     log.info("Loading BM25 index …")
     bm25_store.load()
+
+    # 4. Load NLI cross-encoder model (Phase 6)
+    log.info("Loading NLI model …")
+    try:
+        nli.load()
+    except Exception as exc:
+        log.warning("NLI model failed to load — conflict detection will be skipped: %s", exc)
 
     log.info("All services ready. ✓")
     yield  # ← server is running here
@@ -96,3 +104,6 @@ app.include_router(ingest.router, prefix="/api/v1")
 
 # Phase 3: query + answer generation
 app.include_router(query.router, prefix="/api/v1")
+
+# Phase 6: conflict records
+app.include_router(conflicts_router.router, prefix="/api/v1")
