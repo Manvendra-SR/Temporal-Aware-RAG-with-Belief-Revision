@@ -8,9 +8,10 @@ Routes:
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -54,6 +55,11 @@ class ConflictsResponse(BaseModel):
     page: int
     limit: int
     conflicts: list[ConflictRecord]
+
+
+class ResolveRequest(BaseModel):
+    resolution_type: str   # "temporal_preference" | "manual" | "scope_clarification"
+    resolution_note: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -118,6 +124,70 @@ def list_conflicts(
         page=page,
         limit=limit,
         conflicts=records,
+    )
+
+
+# ---------------------------------------------------------------------------
+# POST /api/v1/conflicts/{conflict_id}/resolve
+# ---------------------------------------------------------------------------
+
+
+@router.post("/conflicts/{conflict_id}/resolve", response_model=ConflictRecord)
+def resolve_conflict(
+    conflict_id: str,
+    body: ResolveRequest,
+    db: Session = Depends(get_db),
+) -> ConflictRecord:
+    """
+    Mark a conflict as resolved with a resolution type and optional note.
+
+    Future queries will use this stored resolution instead of re-running NLI,
+    and belief_revision.py will apply the stored resolution_type directly.
+    """
+    row: ConflictPair | None = (
+        db.query(ConflictPair)
+        .filter(ConflictPair.conflict_id == conflict_id)
+        .first()
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"Conflict {conflict_id!r} not found.")
+
+    if row.is_resolved:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Conflict {conflict_id!r} is already resolved.",
+        )
+
+    # Apply resolution
+    row.is_resolved = True
+    row.resolution_type = body.resolution_type
+    row.resolution_note = body.resolution_note or None
+    row.resolved_at = datetime.now(timezone.utc)
+
+    try:
+        db.commit()
+        db.refresh(row)
+    except Exception as exc:
+        db.rollback()
+        log.error("Failed to resolve conflict %s: %s", conflict_id, exc, exc_info=True)
+        raise HTTPException(status_code=500, detail="Database error while resolving conflict.")
+
+    # Return the full updated record
+    chunk_a_info = _fetch_chunk_info(db, row.chunk_id_a)
+    chunk_b_info = _fetch_chunk_info(db, row.chunk_id_b)
+    if chunk_a_info is None or chunk_b_info is None:
+        raise HTTPException(status_code=500, detail="Chunk data unavailable for this conflict.")
+
+    return ConflictRecord(
+        conflict_id=row.conflict_id,
+        conflict_type=row.conflict_type or "unknown",
+        nli_score=round(row.nli_score or 0.0, 4),
+        detected_at=row.detected_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        detected_during=row.detected_during,
+        is_resolved=row.is_resolved,
+        resolution_type=row.resolution_type,
+        chunk_a=chunk_a_info,
+        chunk_b=chunk_b_info,
     )
 
 

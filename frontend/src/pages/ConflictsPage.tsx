@@ -106,8 +106,38 @@ function ChunkSide({ info, label }: { info: ChunkInfo; label: string }) {
   )
 }
 
-function ConflictRow({ record }: { record: ConflictRecord }) {
+function ConflictRow({
+  record: initialRecord,
+  onResolved,
+}: {
+  record: ConflictRecord
+  onResolved?: (updated: ConflictRecord) => void
+}) {
+  const [record, setRecord] = useState<ConflictRecord>(initialRecord)
   const [expanded, setExpanded] = useState(false)
+  const [resolveOpen, setResolveOpen] = useState(false)
+  const [resolutionType, setResolutionType] = useState('temporal_preference')
+  const [resolutionNote, setResolutionNote] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [resolveError, setResolveError] = useState<string | null>(null)
+
+  const handleResolve = async () => {
+    setSubmitting(true)
+    setResolveError(null)
+    try {
+      const { data } = await axios.post<ConflictRecord>(
+        `/api/v1/conflicts/${record.conflict_id}/resolve`,
+        { resolution_type: resolutionType, resolution_note: resolutionNote },
+      )
+      setRecord(data)
+      setResolveOpen(false)
+      onResolved?.(data)
+    } catch (err: unknown) {
+      setResolveError(axios.isAxiosError(err) ? (err.response?.data?.detail ?? err.message) : 'Unexpected error')
+    } finally {
+      setSubmitting(false)
+    }
+  }
 
   return (
     <div style={{
@@ -201,24 +231,98 @@ function ConflictRow({ record }: { record: ConflictRecord }) {
             <ChunkSide info={record.chunk_b} label="Source B" />
           </div>
 
-          {/* Resolve button (disabled until Phase 7) */}
-          <div style={{ marginTop: '14px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <button
-              disabled
-              title="Manual conflict resolution is available in Phase 7"
-              style={{
-                background: 'var(--bg-hover)', border: '1px solid var(--border)',
-                borderRadius: 'var(--radius-sm)', padding: '7px 16px',
-                color: 'var(--text-muted)', fontSize: '12px', fontWeight: 600,
-                cursor: 'not-allowed', opacity: 0.6,
-              }}
-            >
-              Resolve conflict
-            </button>
-            <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-              Manual resolution available in Phase 7
-            </span>
-          </div>
+          {/* Resolve section */}
+          {!record.is_resolved ? (
+            <div style={{ marginTop: '14px' }}>
+              {!resolveOpen ? (
+                <button
+                  onClick={() => setResolveOpen(true)}
+                  style={{
+                    background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.3)',
+                    borderRadius: 'var(--radius-sm)', padding: '7px 16px',
+                    color: 'var(--accent-primary-hover)', fontSize: '12px', fontWeight: 600, cursor: 'pointer',
+                  }}
+                >
+                  Resolve conflict
+                </button>
+              ) : (
+                <div style={{
+                  background: 'var(--bg-secondary)', border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius-sm)', padding: '14px',
+                  display: 'flex', flexDirection: 'column', gap: '10px',
+                }}>
+                  <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)' }}>Resolve this conflict</div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <label style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600 }}>Resolution type</label>
+                    <select
+                      value={resolutionType}
+                      onChange={e => setResolutionType(e.target.value)}
+                      style={{
+                        background: 'var(--bg-card)', border: '1px solid var(--border)',
+                        borderRadius: 'var(--radius-sm)', padding: '6px 10px',
+                        color: 'var(--text-primary)', fontSize: '12px', cursor: 'pointer',
+                      }}
+                    >
+                      <option value="temporal_preference">Temporal preference (newer wins)</option>
+                      <option value="manual">Manual resolution</option>
+                      <option value="scope_clarification">Scope clarification</option>
+                    </select>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <label style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600 }}>Note (optional)</label>
+                    <textarea
+                      value={resolutionNote}
+                      onChange={e => setResolutionNote(e.target.value)}
+                      placeholder="Why was this resolved this way?"
+                      rows={2}
+                      style={{
+                        background: 'var(--bg-card)', border: '1px solid var(--border)',
+                        borderRadius: 'var(--radius-sm)', padding: '8px 10px',
+                        color: 'var(--text-primary)', fontSize: '12px', resize: 'vertical',
+                        fontFamily: 'inherit',
+                      }}
+                    />
+                  </div>
+
+                  {resolveError && (
+                    <div style={{ fontSize: '11px', color: 'var(--accent-error)' }}>⚠ {resolveError}</div>
+                  )}
+
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      onClick={handleResolve}
+                      disabled={submitting}
+                      style={{
+                        background: 'var(--accent-primary)', border: 'none',
+                        borderRadius: 'var(--radius-sm)', padding: '7px 16px',
+                        color: '#fff', fontSize: '12px', fontWeight: 600,
+                        cursor: submitting ? 'not-allowed' : 'pointer', opacity: submitting ? 0.7 : 1,
+                      }}
+                    >
+                      {submitting ? 'Saving…' : 'Submit resolution'}
+                    </button>
+                    <button
+                      onClick={() => { setResolveOpen(false); setResolveError(null) }}
+                      style={{
+                        background: 'var(--bg-hover)', border: '1px solid var(--border)',
+                        borderRadius: 'var(--radius-sm)', padding: '7px 14px',
+                        color: 'var(--text-muted)', fontSize: '12px', cursor: 'pointer',
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div style={{ marginTop: '14px', fontSize: '12px', color: 'var(--accent-success)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span>✓</span>
+              <span>Resolved — {record.resolution_type}</span>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -344,7 +448,11 @@ export default function ConflictsPage() {
       {data && !loading && data.conflicts.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           {data.conflicts.map(r => (
-            <ConflictRow key={r.conflict_id} record={r} />
+            <ConflictRow
+              key={r.conflict_id}
+              record={r}
+              onResolved={() => fetchConflicts()}
+            />
           ))}
         </div>
       )}

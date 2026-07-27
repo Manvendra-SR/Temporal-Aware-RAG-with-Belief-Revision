@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 from models import QueryLog
+from services.belief_revision import RevisionResult, revise as belief_revise
 from services.conflict_detector import ConflictResult, detect as detect_conflicts
 from services.context import build_context
 from services.query_analyzer import QueryAnalysis, analyze as analyze_query
@@ -79,6 +80,10 @@ class QueryResponse(BaseModel):
     # Phase 6+: conflict detection results
     conflicts_detected: int = 0
     conflict_pairs: list[ConflictInfo] = []
+    # Phase 7+: belief revision output
+    answer_confidence: Optional[str] = None      # "high" | "medium" | "low" | "none"
+    confidence_reason: Optional[str] = None
+    belief_revision_applied: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -92,13 +97,14 @@ def query_endpoint(
 ) -> QueryResponse:
     """
     Full RAG pipeline:
-        1. Hybrid retrieve (BM25 + FAISS + RRF)
+        1.  Hybrid retrieve (BM25 + FAISS + RRF)
         1b. Temporal rerank
         1c. Conflict detection
-        2. Build context string (token-budgeted)
-        3. Generate answer via Groq (unless retrieve_only=true)
-        4. Log to query_log table
-        5. Return answer + source cards
+        1d. Belief revision
+        2.  Build context string (token-budgeted, revision-annotated)
+        3.  Generate answer via Groq (unless retrieve_only=true)
+        4.  Log to query_log table
+        5.  Return answer + source cards
     """
     t_start = time.monotonic()
     query_id = str(uuid.uuid4())
@@ -138,8 +144,16 @@ def query_endpoint(
         conflicted_ids.add(cr.chunk_id_a)
         conflicted_ids.add(cr.chunk_id_b)
 
+    # ── 1d. Belief revision ──────────────────────────────────────────────────
+    revision: RevisionResult = belief_revise(candidates, conflicts, db)
+    # Use revision-filtered chunk list for context building
+    revision_chunk_ids = set(revision.include_chunks)
+    context_chunks = [
+        c for c in candidates if c.chunk_id in revision_chunk_ids
+    ] or candidates  # fallback to all if revision produces empty list
+
     # ── 2. Build context ─────────────────────────────────────────────────────
-    context, _ = build_context(candidates, budget=3000)
+    context, _ = build_context(context_chunks, budget=3000, revision_result=revision)
 
     # ── 3. Generate answer ───────────────────────────────────────────────────
     answer: Optional[str] = None
@@ -199,6 +213,10 @@ def query_endpoint(
             )
             for cr in conflicts
         ],
+        # Phase 7 belief revision fields
+        answer_confidence=revision.answer_confidence,
+        confidence_reason=revision.confidence_reason,
+        belief_revision_applied=revision.belief_revision_applied,
     )
 
 

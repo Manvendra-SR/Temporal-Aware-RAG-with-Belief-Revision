@@ -36,9 +36,40 @@ interface QueryResponse {
   // Phase 6+
   conflicts_detected?: number
   conflict_pairs?: ConflictInfo[]
+  // Phase 7+
+  answer_confidence?: string | null   // "high" | "medium" | "low" | "none"
+  confidence_reason?: string | null
+  belief_revision_applied?: boolean
 }
 
 // ── Sub-components ─────────────────────────────────────────────────────────
+
+function ConfidenceBadge({ level, reason }: { level: string; reason?: string | null }) {
+  const cfg = level === 'high'
+    ? { color: 'var(--accent-success)', bg: 'rgba(52,211,153,0.12)', icon: '●', label: 'High confidence' }
+    : level === 'medium'
+    ? { color: '#f59e0b', bg: 'rgba(245,158,11,0.12)', icon: '◐', label: 'Medium confidence' }
+    : level === 'low'
+    ? { color: '#ef4444', bg: 'rgba(239,68,68,0.12)', icon: '○', label: 'Low — verify sources' }
+    : null
+
+  if (!cfg) return null
+
+  return (
+    <div
+      title={reason || ''}
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: '5px',
+        background: cfg.bg, color: cfg.color,
+        borderRadius: '999px', padding: '3px 10px',
+        fontSize: '11px', fontWeight: 700, cursor: reason ? 'help' : 'default',
+      }}
+    >
+      <span>{cfg.icon}</span>
+      <span>{cfg.label}</span>
+    </div>
+  )
+}
 
 function ScoreBar({ label, value, color }: { label: string; value: number; color: string }) {
   const pct = Math.min(100, Math.round(value * 100))
@@ -157,6 +188,71 @@ function SourceCard({ source, index }: { source: SourceResult; index: number }) 
             fontSize: '9px', fontWeight: 900, flexShrink: 0,
           }}>!</span>
           Conflicts with another retrieved source
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ConflictDetailsPanel({
+  sources,
+  conflictPairs,
+  confidenceReason,
+}: {
+  sources: SourceResult[]
+  conflictPairs: ConflictInfo[]
+  confidenceReason?: string | null
+}) {
+  const [open, setOpen] = useState(false)
+  if (conflictPairs.length === 0) return null
+
+  const sourceMap = new Map(sources.map(s => [s.chunk_id, s]))
+
+  return (
+    <div style={{ marginTop: '16px', borderTop: '1px solid var(--border)', paddingTop: '14px' }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          background: 'none', border: 'none', cursor: 'pointer',
+          display: 'flex', alignItems: 'center', gap: '6px',
+          color: '#f59e0b', fontSize: '12px', fontWeight: 700, padding: 0,
+        }}
+      >
+        <span style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s', display: 'inline-block' }}>▶</span>
+        ⚠ Conflict Details ({conflictPairs.length} pair{conflictPairs.length !== 1 ? 's' : ''})
+      </button>
+
+      {open && (
+        <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          {confidenceReason && (
+            <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+              Why this was chosen: {confidenceReason}
+            </div>
+          )}
+          {conflictPairs.map((pair, i) => {
+            const a = sourceMap.get(pair.chunk_id_a)
+            const b = sourceMap.get(pair.chunk_id_b)
+            return (
+              <div key={i} style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                {[a, b].map((src, j) => src ? (
+                  <div key={j} style={{
+                    flex: 1, minWidth: '180px',
+                    background: 'var(--bg-secondary)',
+                    border: `1px solid ${src.has_conflict ? 'rgba(245,158,11,0.4)' : 'var(--border)'}`,
+                    borderRadius: 'var(--radius-sm)', padding: '10px',
+                  }}>
+                    <div style={{ fontSize: '10px', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '4px' }}>
+                      {src.doc_title}{src.version_string ? ` v${src.version_string}` : ''}
+                      {src.published_at ? ` · ${src.published_at}` : ''}
+                    </div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                      {src.snippet}
+                    </div>
+                  </div>
+                ) : null)}
+              </div>
+            )
+          })}
         </div>
       )}
     </div>
@@ -347,7 +443,7 @@ export default function QueryPage() {
               )}
 
               {/* Latency + meta badges */}
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
                 <span style={{ background: 'rgba(99,102,241,0.12)', color: 'var(--accent-primary-hover)', borderRadius: '999px', padding: '3px 10px', fontSize: '11px', fontWeight: 600 }}>
                   ⏱ {result.latency_ms} ms
                 </span>
@@ -358,6 +454,10 @@ export default function QueryPage() {
                   <span style={{ background: 'rgba(245,158,11,0.12)', color: '#f59e0b', borderRadius: '999px', padding: '3px 10px', fontSize: '11px', fontWeight: 600 }}>
                     Retrieve-only
                   </span>
+                )}
+                {/* Phase 7: confidence badge */}
+                {result.answer_confidence && result.answer_confidence !== 'none' && (
+                  <ConfidenceBadge level={result.answer_confidence} reason={result.confidence_reason} />
                 )}
               </div>
 
@@ -373,6 +473,15 @@ export default function QueryPage() {
                   <div style={{ color: 'var(--text-primary)', fontSize: '14px', lineHeight: 1.8 }} className="markdown-body">
                     <ReactMarkdown>{result.answer}</ReactMarkdown>
                   </div>
+
+                  {/* Phase 7: Conflict details — collapsible */}
+                  {result.belief_revision_applied && (result.conflicts_detected ?? 0) > 0 && (
+                    <ConflictDetailsPanel
+                      sources={result.sources}
+                      conflictPairs={result.conflict_pairs ?? []}
+                      confidenceReason={result.confidence_reason}
+                    />
+                  )}
                 </div>
               ) : (
                 <div style={{ color: 'var(--text-muted)', fontSize: '13px', fontStyle: 'italic', padding: '12px 0' }}>
