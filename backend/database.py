@@ -18,7 +18,7 @@ from config import settings
 engine = create_engine(
     settings.database_url,
     pool_pre_ping=True,   # reconnect automatically if connection drops
-    echo=(settings.app_env == "development"),
+    echo=settings.db_echo,
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

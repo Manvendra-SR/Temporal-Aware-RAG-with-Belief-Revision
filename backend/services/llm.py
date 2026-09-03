@@ -38,6 +38,16 @@ exists and recommend verifying from primary sources.
 - Never invent facts, version numbers, or API names not present in the context.
 """
 
+class ModelUnavailableError(RuntimeError):
+    """
+    Raised when LLM_MODEL names a model the account cannot use.
+
+    Subclasses RuntimeError so routers/query.py's existing handling (surface
+    the message in the answer field rather than failing the whole request)
+    applies — retrieval succeeded and its results are still worth returning.
+    """
+
+
 # Lazy singleton — created on first call to generate()
 _client = None
 
@@ -78,15 +88,29 @@ def generate(context: str, query: str) -> str:
 
     log.debug("Calling Groq model=%s, context_len=%d chars", settings.llm_model, len(context))
 
-    response = client.chat.completions.create(
-        model=settings.llm_model,
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user",   "content": user_message},
-        ],
-        temperature=0.1,    # low temperature for factual accuracy
-        max_tokens=1024,
-    )
+    try:
+        response = client.chat.completions.create(
+            model=settings.llm_model,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user",   "content": user_message},
+            ],
+            temperature=0.1,    # low temperature for factual accuracy
+            max_tokens=1024,
+        )
+    except Exception as exc:
+        # A decommissioned model is the single most likely cause here and the
+        # raw provider error ("model_not_found") does not tell the operator
+        # what to do about it. Retrieval is unaffected, which makes this easy
+        # to misdiagnose as a pipeline bug.
+        if "model_not_found" in str(exc) or "does not exist" in str(exc):
+            raise ModelUnavailableError(
+                f"The configured LLM_MODEL {settings.llm_model!r} is not "
+                f"available on your Groq account — hosted models are retired "
+                f"periodically. Run `python scripts/list_llm_models.py` to see "
+                f"what your key can reach, then update LLM_MODEL in .env."
+            ) from exc
+        raise
 
     answer = response.choices[0].message.content or ""
     log.info(

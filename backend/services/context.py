@@ -51,7 +51,7 @@ def build_context(
     chunks: list[CandidateChunk],
     budget: int = 3000,
     revision_result: Optional["RevisionResult"] = None,
-) -> tuple[str, int]:
+) -> tuple[str, list[str]]:
     """
     Build a formatted context string from a ranked list of chunks.
 
@@ -63,16 +63,24 @@ def build_context(
                          DEPRECATED markers and conflict notices are injected.
 
     Returns:
-        (context_string, number_of_sources_included)
+        (context_string, chunk_ids_actually_included)
+
+        The second element is the ids of the chunks that fit inside the token
+        budget, in order. Callers need this to report which retrieved sources
+        genuinely informed the answer — the caller passes in far more
+        candidates than fit, and previously had no way to tell which ones the
+        model actually saw.
     """
     # Determine which chunk_ids are excluded (deprecated) per revision result
     exclude_set: set[str] = set()
+    preferred_set: set[str] = set()
     if revision_result is not None:
         exclude_set = set(revision_result.exclude_chunks)
+        preferred_set = set(revision_result.preferred_chunks)
 
     parts: list[str] = []
     used_tokens = 0
-    included = 0
+    included_ids: list[str] = []
 
     # Inject conflict notices once at the top (before any source block)
     if revision_result is not None and revision_result.conflict_notices:
@@ -92,15 +100,14 @@ def build_context(
 
         header = "[" + " | ".join(header_parts) + "]"
 
-        # Add PREFERRED / DEPRECATED annotation
-        if revision_result is not None:
-            if chunk.chunk_id in exclude_set:
-                header += "   [DEPRECATED]"
-            elif revision_result.include_chunks and chunk.chunk_id in revision_result.include_chunks:
-                # Mark as PREFERRED only if it's specifically in include list
-                # and there were actual conflicts processed
-                if revision_result.belief_revision_applied:
-                    header += "   ← PREFERRED"
+        # Annotate only chunks that were actually party to a conflict. Marking
+        # every retained chunk "← PREFERRED" (the previous behaviour) made the
+        # label meaningless: on a typical query 19 of 20 sources carried it, so
+        # the model had no signal about which source won a real disagreement.
+        if chunk.chunk_id in exclude_set:
+            header += "   [DEPRECATED]"
+        elif chunk.chunk_id in preferred_set:
+            header += "   ← PREFERRED"
 
         block = f"{header}\n{chunk.content}"
         block_tokens = _count_tokens(block)
@@ -114,7 +121,7 @@ def build_context(
 
         parts.append(block)
         used_tokens += block_tokens
-        included += 1
+        included_ids.append(chunk.chunk_id)
 
     # Append confidence footer
     if revision_result is not None and revision_result.answer_confidence not in ("none", None):
@@ -127,5 +134,8 @@ def build_context(
             parts.append(confidence_text)
 
     context = "\n\n".join(parts)
-    log.debug("build_context: %d sources, %d tokens", included, used_tokens)
-    return context, included
+    log.debug(
+        "build_context: %d/%d sources fitted, %d tokens (budget=%d)",
+        len(included_ids), len(chunks), used_tokens, budget,
+    )
+    return context, included_ids

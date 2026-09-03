@@ -19,14 +19,15 @@ from __future__ import annotations
 
 import logging
 import pickle
-from pathlib import Path
+
+from config import DATA_DIR
 
 log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Path
 # ---------------------------------------------------------------------------
-_DATA_DIR = Path(__file__).resolve().parents[2] / "data"
+_DATA_DIR = DATA_DIR
 _BM25_PATH = _DATA_DIR / "bm25.pkl"
 
 # ---------------------------------------------------------------------------
@@ -64,20 +65,42 @@ def load() -> None:
         log.info("BM25 index initialised (empty).")
 
 
-def add(chunk_ids: list[str], texts: list[str]) -> None:
+def add(chunk_ids: list[str], texts: list[str], persist: bool = True) -> None:
     """
-    Add new texts to the BM25 index and persist to disk.
+    Add new texts to the BM25 index.
     The entire index is rebuilt (fast for research-scale datasets).
 
     Args:
         chunk_ids: UUID strings identifying each chunk.
         texts:     raw text content (not yet tokenised) for each chunk.
+        persist:   write to disk afterwards. Set False when adding many
+                   batches in a row (e.g. a full rebuild) and call persist()
+                   once at the end.
     """
-    global _corpus_ids, _corpus_texts, _bm25
-
+    # No `global` needed: the lists are mutated in place and _rebuild()
+    # owns the rebinding of _bm25.
     _corpus_ids.extend(chunk_ids)
     _corpus_texts.extend([_tokenize(t) for t in texts])
     _rebuild()
+    if persist:
+        _save()
+
+
+def reset() -> None:
+    """
+    Drop the entire corpus without touching disk.
+
+    Used by scripts/rebuild_indexes.py. Call persist() afterwards to write out.
+    """
+    global _corpus_ids, _corpus_texts, _bm25
+    _corpus_ids = []
+    _corpus_texts = []
+    _bm25 = None
+    log.info("BM25 index reset (empty).")
+
+
+def persist() -> None:
+    """Write the current corpus and index to disk."""
     _save()
 
 

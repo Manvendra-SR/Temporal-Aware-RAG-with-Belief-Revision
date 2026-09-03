@@ -19,7 +19,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -43,49 +43,73 @@ class LineageResult:
 
 
 # ---------------------------------------------------------------------------
-# Version comparison helpers
+# Version comparison — the single ordering policy for the whole application
 # ---------------------------------------------------------------------------
+#
+# Every module that needs to order versions (lineage resolution, the /lineage
+# endpoint, the reranker's version matching) MUST use version_sort_key() /
+# is_version_greater() from this module. Do not re-implement version parsing.
+#
+# Policy
+# ------
+# * A version is reduced to its sequence of integer components, in order:
+#       "v1.13.1" → (1, 13, 1)      "2.2" → (2, 2)      "2024-03-01" → (2024, 3, 1)
+# * Components are zero-padded to a fixed width so that trailing zeros are
+#   insignificant. This makes the following hold:
+#       "2.2" == "2.2.0" == "2.2.0.0"      "1" == "1.0"
+# * Components compare numerically, not lexically, so "2.10" > "2.9".
+# * A missing or unparseable version sorts BELOW every real version, and is
+#   never considered greater than anything (see is_version_greater).
+#
+# Note: because components are compared positionally, a date-style version
+# ("2024-03-01") and a semver-style version ("2.2") are not meaningfully
+# comparable — a date always sorts higher. A single lineage must therefore use
+# one scheme consistently. This is documented in the README.
+
+_VERSION_COMPONENTS = 6   # components kept/compared; extra components are ignored
+
+_DIGIT_RUN_RE = re.compile(r"\d+")
 
 
-def _parse_version(version_str: Optional[str]) -> tuple[tuple, str]:
+def version_sort_key(version_str: Optional[str]) -> tuple:
     """
-    Parse a version string into a sortable tuple and canonical string.
-    Returns (sort_key_tuple, canonical_str).
+    Return a tuple that sorts versions correctly, for use as a `key=` function.
 
-    Handles:
-      "2.2"      → ((2, 2, 0, 0), "2.2")
-      "1.13.1"   → ((1, 13, 1, 0), "1.13.1")
-      "2024-03"  → ((2024, 3, 0, 0), "2024-03")
-      None       → ((0,), "")
+    The first element is a "has a parseable version" flag, so missing and
+    malformed versions always sort below real ones. The remaining elements are
+    the zero-padded numeric components.
+
+    Examples:
+        version_sort_key("2.2")     == version_sort_key("2.2.0")
+        version_sort_key("2.10")     > version_sort_key("2.9")
+        version_sort_key(None)       < version_sort_key("0.1")
+        version_sort_key("bad!!")    == version_sort_key(None)
     """
-    if not version_str:
-        return (0,), ""
+    if not version_str or not version_str.strip():
+        return (0,) + (0,) * _VERSION_COMPONENTS
 
-    # Try date-style: YYYY-MM or YYYY-MM-DD
-    date_m = re.match(r"^(\d{4})-(\d{2})(?:-(\d{2}))?$", version_str)
-    if date_m:
-        parts = [int(x) for x in date_m.groups() if x is not None]
-        return tuple(parts), version_str  # type: ignore[return-value]
+    nums = _DIGIT_RUN_RE.findall(version_str)
+    if not nums:
+        # Malformed — no digits at all. Treated exactly like a missing version.
+        return (0,) + (0,) * _VERSION_COMPONENTS
 
-    # Try numeric semver: 1.2.3.4
-    nums = re.findall(r"\d+", version_str)
-    if nums:
-        return tuple(int(n) for n in nums), version_str  # type: ignore[return-value]
-
-    return (0,), version_str
+    components = [int(n) for n in nums[:_VERSION_COMPONENTS]]
+    components += [0] * (_VERSION_COMPONENTS - len(components))
+    return (1,) + tuple(components)
 
 
-def _version_gt(a: Optional[str], b: Optional[str]) -> bool:
-    """Return True if version a is strictly greater than version b."""
-    ka, _ = _parse_version(a)
-    kb, _ = _parse_version(b)
-    return ka > kb
+def is_version_greater(a: Optional[str], b: Optional[str]) -> bool:
+    """
+    Return True if version `a` is strictly greater than version `b`.
 
-
-def _version_eq(a: Optional[str], b: Optional[str]) -> bool:
-    ka, _ = _parse_version(a)
-    kb, _ = _parse_version(b)
-    return ka == kb
+    A missing/malformed `a` is never greater than anything (not even another
+    missing version), which is what makes the lineage guard reject uploads that
+    omit a usable version.
+    """
+    key_a = version_sort_key(a)
+    if key_a[0] == 0:
+        return False
+    return key_a > version_sort_key(b)
 
 
 # ---------------------------------------------------------------------------
@@ -136,8 +160,10 @@ def resolve(
     if parent is None:
         raise ValueError(f"parent_doc_id '{parent_doc_id}' not found in the database.")
 
-    # Version ordering guard — reject if new version is not strictly greater
-    if parent.version_string and not _version_gt(new_version, parent.version_string):
+    # Version ordering guard — reject if new version is not strictly greater.
+    # Uses the shared ordering policy so "2.2" is correctly rejected against a
+    # "2.2.0" parent (they are equal) and "2.10" is correctly accepted over "2.9".
+    if parent.version_string and not is_version_greater(new_version, parent.version_string):
         raise ValueError(
             f"New version '{new_version}' must be strictly greater than "
             f"the parent version '{parent.version_string}'."

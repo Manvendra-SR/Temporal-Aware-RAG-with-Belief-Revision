@@ -20,21 +20,20 @@ from __future__ import annotations
 
 import json
 import logging
-import os
-from pathlib import Path
 
 import numpy as np
+
+from config import DATA_DIR
+from services.embedder import EMBEDDING_DIM
 
 log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
-_DATA_DIR = Path(__file__).resolve().parents[2] / "data"
+_DATA_DIR = DATA_DIR
 _INDEX_PATH = _DATA_DIR / "faiss.index"
 _META_PATH = _DATA_DIR / "faiss_meta.json"
-
-EMBEDDING_DIM = 384   # all-MiniLM-L6-v2
 
 # ---------------------------------------------------------------------------
 # Module-level state
@@ -91,18 +90,40 @@ def next_id() -> int:
     return val
 
 
-def add(faiss_ids: list[int], vectors: np.ndarray) -> None:
+def add(faiss_ids: list[int], vectors: np.ndarray, persist: bool = True) -> None:
     """
-    Insert vectors into the index and save to disk.
+    Insert vectors into the index.
 
     Args:
         faiss_ids: integer IDs aligned with vectors rows.
         vectors:   float32 array of shape (N, EMBEDDING_DIM).
+        persist:   write the index to disk afterwards. Set False when adding
+                   many batches in a row (e.g. a full rebuild) and call
+                   persist() once at the end — saving after every batch
+                   rewrites the whole index file each time.
     """
-    import faiss
     idx = _get_index()
     ids_arr = np.array(faiss_ids, dtype=np.int64)
     idx.add_with_ids(vectors.astype(np.float32), ids_arr)
+    if persist:
+        _save()
+
+
+def reset() -> None:
+    """
+    Drop all vectors and restart the ID counter, without touching disk.
+
+    Used by scripts/rebuild_indexes.py to rebuild from the database. Call
+    persist() afterwards to write the result out.
+    """
+    global _index, _next_id
+    _index = _build_empty_index()
+    _next_id = 0
+    log.info("FAISS index reset (empty, next_id=0).")
+
+
+def persist() -> None:
+    """Write the current index and ID counter to disk."""
     _save()
 
 

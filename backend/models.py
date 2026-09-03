@@ -23,7 +23,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.dialects.postgresql import ARRAY, JSON, UUID
+from sqlalchemy.dialects.postgresql import JSON, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from database import Base
@@ -236,7 +236,11 @@ class ConflictPair(Base):
     )
 
     def __repr__(self) -> str:
+        # nli_score is nullable, so it must not be format-spec'd unconditionally
+        # — `{None:.2f}` raises TypeError, which would make any attempt to log
+        # or debug-print an unscored row blow up.
+        score = "—" if self.nli_score is None else f"{self.nli_score:.2f}"
         return (
             f"<ConflictPair {self.conflict_id[:8]} "
-            f"type={self.conflict_type} score={self.nli_score:.2f}>"
+            f"type={self.conflict_type} score={score}>"
         )

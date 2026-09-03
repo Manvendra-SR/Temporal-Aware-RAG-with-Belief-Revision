@@ -30,6 +30,15 @@ log = logging.getLogger(__name__)
 
 router = APIRouter(tags=["query"])
 
+# Token budget for the assembled LLM context. Candidates beyond this are still
+# returned to the client as retrieved sources, but flagged used_in_answer=False.
+CONTEXT_TOKEN_BUDGET = 3000
+
+# How many top-ranked candidates are scanned for pairwise contradictions.
+# Conflict detection is O(n²) in pair selection before the NLI batch, so this
+# is capped independently of max_chunks (which may be up to 50).
+CONFLICT_SCAN_LIMIT = 20
+
 
 # ---------------------------------------------------------------------------
 # Request / Response schemas
@@ -39,27 +48,50 @@ class QueryRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=2000)
     max_chunks: int = Field(default=20, ge=1, le=50)
     retrieve_only: bool = False
+    no_temporal: bool = False  # Phase 8: skip temporal stages for Compare baseline
 
 
 class SourceResult(BaseModel):
     """
-    Full source schema — future-phase fields are pre-declared as Optional
-    so no breaking API change is needed in Phases 5 and 6.
+    One retrieved chunk, with every score the pipeline computed for it.
+
+    Score semantics (see services/retriever.py for the full contract):
+      bm25_score       raw Okapi BM25 — UNBOUNDED, diagnostic only, never a %
+      semantic_score   cosine similarity, [0, 1]
+      rrf_score        rank-fusion score, ≤ 2/61 — comparable only within a query
+      relevance_score  rrf_score normalised across this query's results, [0, 1]
+      temporal_score   freshness weight 2^(-age/half_life), [0, 1]
+      composite_score  final reranking score, [0, 1]
     """
     chunk_id: str
     doc_title: str
     snippet: str
+    section_heading: Optional[str] = None
+
+    # Retrieval scores
     bm25_score: float
     semantic_score: float
     rrf_score: float
-    # Phase 5+ (null until temporal scoring is implemented):
+    relevance_score: float
+
+    # Temporal metadata + scores (null when temporal stages were skipped)
     version_string: Optional[str] = None
     published_at: Optional[str] = None
     is_latest: Optional[bool] = None
+    is_superseded: bool = False
     temporal_score: Optional[float] = None
     composite_score: Optional[float] = None
-    # Phase 6+ (null until conflict detection is implemented):
-    has_conflict: Optional[bool] = None
+
+    # Conflict / belief-revision outcome
+    has_conflict: bool = False
+    # True when this chunk actually fitted in the LLM's context window. The
+    # endpoint returns every candidate, but only those that fit inform the
+    # answer — without this the UI cannot honestly label its "Sources" list.
+    used_in_answer: bool = False
+    # Set when belief revision dropped this chunk, explaining why in plain English.
+    excluded_reason: Optional[str] = None
+    # 1-based position in the final ranking.
+    rank: int = 0
 
 
 class ConflictInfo(BaseModel):
@@ -70,17 +102,29 @@ class ConflictInfo(BaseModel):
     nli_score: float
 
 
+class QueryAnalysisInfo(BaseModel):
+    """How the system interpreted the question, surfaced so the UI can show it."""
+    version_hint: Optional[str] = None
+    temporal_qualifier: bool = False
+    wants_historical_sources: bool = False
+
+
 class QueryResponse(BaseModel):
     query_id: str
     answer: Optional[str]
     latency_ms: int
     sources: list[SourceResult]
-    # Phase 5+: version hint extracted from query (null if none detected)
+    # How the query was interpreted
     version_hint: Optional[str] = None
-    # Phase 6+: conflict detection results
+    analysis: QueryAnalysisInfo = QueryAnalysisInfo()
+    # True when the temporal pipeline ran (false for the baseline comparison)
+    temporal_pipeline_applied: bool = True
+    # How many of `sources` actually fitted into the answer's context
+    sources_used_in_answer: int = 0
+    # Conflict detection results
     conflicts_detected: int = 0
     conflict_pairs: list[ConflictInfo] = []
-    # Phase 7+: belief revision output
+    # Belief revision output
     answer_confidence: Optional[str] = None      # "high" | "medium" | "low" | "none"
     confidence_reason: Optional[str] = None
     belief_revision_applied: bool = False
@@ -108,6 +152,7 @@ def query_endpoint(
     """
     t_start = time.monotonic()
     query_id = str(uuid.uuid4())
+    temporal_enabled = not req.no_temporal
 
     # ── 1. Retrieve ──────────────────────────────────────────────────────────
     candidates: list[CandidateChunk] = hybrid_retrieve(
@@ -116,10 +161,16 @@ def query_endpoint(
         k=req.max_chunks,
     )
 
-    # ── 1b. Temporal rerank ───────────────────────────────────────────
     analysis: QueryAnalysis = analyze_query(req.query)
-    if candidates:
-        candidates = temporal_rerank(candidates, analysis, db)
+    analysis_info = QueryAnalysisInfo(
+        version_hint=analysis.version_hint,
+        temporal_qualifier=analysis.temporal_qualifier,
+        wants_historical_sources=analysis.wants_historical_sources,
+    )
+
+    # ── 1b. Temporal rerank (skipped in baseline mode) ─────────────────────
+    if candidates and temporal_enabled:
+        candidates = temporal_rerank(candidates, analysis)
 
     if not candidates:
         latency_ms = int((time.monotonic() - t_start) * 1000)
@@ -130,13 +181,14 @@ def query_endpoint(
             latency_ms=latency_ms,
             sources=[],
             version_hint=analysis.version_hint,
+            analysis=analysis_info,
+            temporal_pipeline_applied=temporal_enabled,
         )
 
-    # ── 1c. Conflict detection ────────────────────────────────────────────────
-    conflicts: list[ConflictResult] = detect_conflicts(
-        candidates=candidates[:20],
-        db=db,
-        query_id=query_id,
+    # ── 1c. Conflict detection (skipped in baseline mode) ────────────────────
+    conflicts: list[ConflictResult] = (
+        detect_conflicts(candidates=candidates[:CONFLICT_SCAN_LIMIT], db=db, query_id=query_id)
+        if temporal_enabled else []
     )
     # Build a set of chunk_ids that are part of any conflict
     conflicted_ids: set[str] = set()
@@ -144,8 +196,12 @@ def query_endpoint(
         conflicted_ids.add(cr.chunk_id_a)
         conflicted_ids.add(cr.chunk_id_b)
 
-    # ── 1d. Belief revision ──────────────────────────────────────────────────
-    revision: RevisionResult = belief_revise(candidates, conflicts, db)
+    # ── 1d. Belief revision (skipped in baseline mode) ──────────────────────
+    # With no conflicts the engine is a pass-through, which is exactly the
+    # baseline behaviour, so the baseline path calls it with an empty list
+    # rather than branching around it.
+    revision: RevisionResult = belief_revise(candidates, conflicts, db, analysis)
+
     # Use revision-filtered chunk list for context building
     revision_chunk_ids = set(revision.include_chunks)
     context_chunks = [
@@ -153,7 +209,10 @@ def query_endpoint(
     ] or candidates  # fallback to all if revision produces empty list
 
     # ── 2. Build context ─────────────────────────────────────────────────────
-    context, _ = build_context(context_chunks, budget=3000, revision_result=revision)
+    context, used_chunk_ids = build_context(
+        context_chunks, budget=CONTEXT_TOKEN_BUDGET, revision_result=revision
+    )
+    used_in_answer: set[str] = set(used_chunk_ids)
 
     # ── 3. Generate answer ───────────────────────────────────────────────────
     answer: Optional[str] = None
@@ -177,21 +236,28 @@ def query_endpoint(
             chunk_id=c.chunk_id,
             doc_title=c.doc_title,
             snippet=c.content_snippet,
+            section_heading=c.section_heading,
+            rank=i,
+            # Retrieval scores
             bm25_score=round(c.bm25_score, 4),
             semantic_score=c.semantic_score,
             rrf_score=c.rrf_score,
-            # Phase 5 temporal fields
+            relevance_score=c.relevance_score,
+            # Temporal metadata + scores
             version_string=c.version_string,
             published_at=(
                 c.published_at.strftime("%Y-%m-%d") if c.published_at else None
             ),
             is_latest=c.is_latest,
+            is_superseded=c.is_superseded,
             temporal_score=c.temporal_score,
             composite_score=c.composite_score,
-            # Phase 6: flag chunks that appear in any conflict pair
+            # Conflict / belief-revision outcome
             has_conflict=(c.chunk_id in conflicted_ids),
+            used_in_answer=(c.chunk_id in used_in_answer),
+            excluded_reason=revision.exclusion_reasons.get(c.chunk_id),
         )
-        for c in candidates
+        for i, c in enumerate(candidates, start=1)
     ]
 
     # ── 5. Log to DB ─────────────────────────────────────────────────────────
@@ -203,6 +269,9 @@ def query_endpoint(
         latency_ms=latency_ms,
         sources=sources,
         version_hint=analysis.version_hint,
+        analysis=analysis_info,
+        temporal_pipeline_applied=temporal_enabled,
+        sources_used_in_answer=len(used_in_answer),
         conflicts_detected=len(conflicts),
         conflict_pairs=[
             ConflictInfo(
@@ -213,7 +282,7 @@ def query_endpoint(
             )
             for cr in conflicts
         ],
-        # Phase 7 belief revision fields
+        # Belief revision fields
         answer_confidence=revision.answer_confidence,
         confidence_reason=revision.confidence_reason,
         belief_revision_applied=revision.belief_revision_applied,

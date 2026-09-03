@@ -22,6 +22,7 @@ from config import settings
 from database import Base, engine
 from routers import health, ingest, query
 from routers import conflicts as conflicts_router
+from routers import analytics as analytics_router
 from services import embedder, faiss_store, bm25_store, nli
 
 # ── Logging ─────────────────────────────────────────────────────────────────
@@ -63,10 +64,55 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         log.warning("NLI model failed to load — conflict detection will be skipped: %s", exc)
 
+    # 5. Warn if the search indexes have drifted from the database
+    _check_index_consistency()
+
     log.info("All services ready. ✓")
     yield  # ← server is running here
 
     log.info("Shutting down.")
+
+
+def _check_index_consistency() -> None:
+    """
+    Compare the FAISS/BM25 index sizes against the chunk count in Postgres.
+
+    The indexes are derived data; Postgres is the source of truth. They can
+    drift when documents are deleted directly from the database, or when an
+    older build wrote to the indexes before committing a transaction that then
+    failed. Drift is silent at query time — orphaned entries are retrieved,
+    fail to resolve to a row, and are dropped, so every result set quietly
+    comes back short. Surfacing it at startup makes it diagnosable.
+    """
+    from sqlalchemy import func
+    from database import SessionLocal
+    from models import Chunk
+
+    try:
+        with SessionLocal() as session:
+            chunk_count = session.query(func.count(Chunk.chunk_id)).scalar() or 0
+    except Exception as exc:
+        log.warning("Could not verify index consistency (database unreachable): %s", exc)
+        return
+
+    faiss_size = faiss_store.index_size()
+    bm25_size = bm25_store.corpus_size()
+
+    if faiss_size == chunk_count and bm25_size == chunk_count:
+        log.info(
+            "Index consistency OK — %d chunks in FAISS, BM25 and Postgres.",
+            chunk_count,
+        )
+        return
+
+    log.warning(
+        "INDEX DRIFT: Postgres has %d chunks but FAISS has %d and BM25 has %d. "
+        "Orphaned index entries are silently dropped during retrieval, so "
+        "queries will return fewer sources than requested. "
+        "Run `python scripts/rebuild_indexes.py` to rebuild both indexes "
+        "from the database.",
+        chunk_count, faiss_size, bm25_size,
+    )
 
 
 # ── App ──────────────────────────────────────────────────────────────────────
@@ -78,7 +124,7 @@ app = FastAPI(
         "A research RAG system that understands document versions, "
         "detects temporal conflicts, and applies belief revision."
     ),
-    version="0.1.0",
+    version="0.2.0",
     lifespan=lifespan,
 )
 
@@ -107,3 +153,6 @@ app.include_router(query.router, prefix="/api/v1")
 
 # Phase 6: conflict records
 app.include_router(conflicts_router.router, prefix="/api/v1")
+
+# Phase 8: analytics + timeline
+app.include_router(analytics_router.router, prefix="/api/v1")

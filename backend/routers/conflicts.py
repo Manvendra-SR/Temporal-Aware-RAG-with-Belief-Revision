@@ -13,6 +13,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from database import get_db
@@ -51,10 +52,16 @@ class ConflictRecord(BaseModel):
 
 
 class ConflictsResponse(BaseModel):
-    total: int
+    total: int          # matching the current filters
     page: int
     limit: int
     conflicts: list[ConflictRecord]
+    # Corpus-wide counts, independent of filters and paging. The UI previously
+    # derived "pending"/"resolved" by counting the current page while showing
+    # `total` next to them, so the three numbers disagreed as soon as there was
+    # more than one page.
+    total_unresolved: int = 0
+    total_resolved: int = 0
 
 
 class ResolveRequest(BaseModel):
@@ -119,11 +126,24 @@ def list_conflicts(
             chunk_b=chunk_b_info,
         ))
 
+    total_unresolved = (
+        db.query(func.count(ConflictPair.conflict_id))
+        .filter(ConflictPair.is_resolved.is_(False))
+        .scalar() or 0
+    )
+    total_resolved = (
+        db.query(func.count(ConflictPair.conflict_id))
+        .filter(ConflictPair.is_resolved.is_(True))
+        .scalar() or 0
+    )
+
     return ConflictsResponse(
         total=total,
         page=page,
         limit=limit,
         conflicts=records,
+        total_unresolved=total_unresolved,
+        total_resolved=total_resolved,
     )
 
 

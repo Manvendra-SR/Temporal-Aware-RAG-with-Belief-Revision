@@ -27,7 +27,7 @@ from models import Chunk, Document
 from services import bm25_store, embedder, faiss_store
 from services.chunker import chunk as do_chunk
 from services.parser import parse, ParseResult
-from services.version_resolver import resolve as resolve_lineage
+from services.version_resolver import resolve as resolve_lineage, version_sort_key
 
 log = logging.getLogger(__name__)
 
@@ -160,9 +160,19 @@ async def ingest_document(
         3. Parse → text + headings
         4. Chunk → ChunkData list
         5. Embed all chunks
-        6. Add to FAISS + BM25 indexes
-        7. Write Document + Chunks to PostgreSQL
-        8. Resolve version lineage (explicit via parent_doc_id)
+        6. Write Document + Chunks to PostgreSQL
+        7. Resolve version lineage (explicit via parent_doc_id)
+        8. COMMIT, then add vectors to the FAISS + BM25 indexes
+
+    Ordering note: the indexes are written LAST, after the database commit.
+    They used to be written first, which meant any failure in steps 6-7 — most
+    commonly the lineage guard rejecting an out-of-order version with a 422 —
+    rolled back the database but left the chunks permanently in FAISS and BM25.
+    Those orphans are then retrieved but cannot be resolved back to a row, so
+    they silently shrink every future result set. Postgres is the source of
+    truth and the indexes are derivable from it (scripts/rebuild_indexes.py),
+    so committing first makes the failure mode recoverable in the right
+    direction.
     """
     # ── 1. Validate metadata ─────────────────────────────────────────────────
     version_string = _validate_version(version_string)
@@ -198,14 +208,12 @@ async def ingest_document(
     # ── 5. Embed ────────────────────────────────────────────────────────────
     vectors = embedder.embed([c.content for c in chunks])  # (N, 384)
 
-    # ── 6. Assign FAISS IDs ─────────────────────────────────────────────────
+    # Reserve FAISS ids and chunk UUIDs. next_id() only advances an in-memory
+    # counter; nothing is written to either index until after the commit below.
     faiss_ids = [faiss_store.next_id() for _ in chunks]
-    faiss_store.add(faiss_ids, vectors)
-
     chunk_uuids = [str(uuid.uuid4()) for _ in chunks]
-    bm25_store.add(chunk_uuids, [c.raw_content for c in chunks])
 
-    # ── 7. Write to PostgreSQL ──────────────────────────────────────────────
+    # ── 6. Write to PostgreSQL ──────────────────────────────────────────────
     now = datetime.now(timezone.utc)
     doc_id = str(uuid.uuid4())
 
@@ -242,7 +250,7 @@ async def ingest_document(
     db.bulk_save_objects(db_chunks)
     # Don't commit yet — version resolver needs the session open
 
-    # ── 8. Resolve version lineage ──────────────────────────────────────────
+    # ── 7. Resolve version lineage ──────────────────────────────────────────
     try:
         lineage = resolve_lineage(
             parent_doc_id=parent_doc_id,
@@ -259,6 +267,32 @@ async def ingest_document(
     doc.parent_doc_id = lineage.parent_doc_id
 
     db.commit()
+
+    # ── 8. Index (only now that the rows are durably committed) ─────────────
+    # If this fails the document exists but is not searchable — a recoverable
+    # state, fixable with scripts/rebuild_indexes.py. The reverse ordering
+    # would leave unreachable vectors that no rebuild can clean up.
+    # BM25 indexes `content` — the same text that was embedded, and the same
+    # text persisted to the chunks table. It previously indexed `raw_content`,
+    # which is never stored, so the BM25 index could not be rebuilt from the
+    # database and the two retrievers searched subtly different text.
+    try:
+        faiss_store.add(faiss_ids, vectors)
+        bm25_store.add(chunk_uuids, [c.content for c in chunks])
+    except Exception:
+        log.exception(
+            "Indexing failed for doc_id=%s after the database commit. The "
+            "document is stored but will not be retrievable until the indexes "
+            "are rebuilt (python scripts/rebuild_indexes.py).",
+            doc_id,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Document was saved but could not be indexed, so it is not yet "
+                "searchable. Rebuild the search indexes to recover it."
+            ),
+        )
 
     log.info(
         "Ingested doc_id=%s with %d chunks. Lineage: %s",
@@ -429,10 +463,11 @@ def get_lineage(doc_id: str, db: Session = Depends(get_db)) -> list[LineageEntry
                     next_frontier.append(child)
         frontier = next_frontier
 
-    # Sort by version (oldest first), fall back to ingested_at
-    from services.version_resolver import _parse_version
+    # Sort by version (oldest first), falling back to ingested_at for ties.
+    # Uses the shared ordering policy from version_resolver so the lineage strip
+    # in the UI orders versions exactly the way the lineage guard does.
     chain.sort(key=lambda d: (
-        _parse_version(d.version_string)[0],
+        version_sort_key(d.version_string),
         d.ingested_at or datetime.min.replace(tzinfo=timezone.utc),
     ))
 

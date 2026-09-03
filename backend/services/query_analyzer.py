@@ -3,10 +3,18 @@ services/query_analyzer.py — Pure-regex query intent extraction.
 
 analyze(query_text) → QueryAnalysis
 
-Detects:
-    version_hint         : str | None   e.g. "1.13", "2.0", "1.x"
-    temporal_qualifier   : bool         True when user asks about an older version
-    domain_hint          : str | None   e.g. "pytorch", "numpy"
+Detects two independent things:
+
+    version_hint        str | None   the version the user asked about ("1.13", "2.x")
+    temporal_qualifier  bool         the user used historical wording ("deprecated",
+                                     "used to", "in older versions")
+
+These are deliberately kept separate. `temporal_qualifier` reflects *only* what
+the user's wording says. Whether superseded chunks should be unlocked is a
+retrieval policy decision and lives in temporal_reranker, which reads the
+derived `wants_historical_sources` property.
+
+No LLM calls — compiled regex only, so this adds negligible latency.
 """
 
 from __future__ import annotations
@@ -14,57 +22,64 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-# ── Constants ───────────────────────────────────────────────────────────────
-
-# Words/phrases that signal the user wants an *older* version
-_TEMPORAL_KEYWORDS: list[str] = [
+# ── Historical-intent keywords ──────────────────────────────────────────────
+#
+# Matched as whole words/phrases. Substring matching was previously used, which
+# produced false positives on very common words: "old" fired on "threshold",
+# "gold" and "hold", and "in v" fired on "in various". Every entry below is
+# anchored with \b on both sides.
+_TEMPORAL_PHRASES: list[str] = [
     "previously",
     "before",
     "old",
     "older",
+    "oldest",
     "legacy",
     "deprecated",
     "used to",
     "earlier",
     "prior",
     "historic",
+    "historical",
     "history",
     "when was",
     "in version",
-    "in v",
     "back in",
-    "original",
-    "first version",
+    "originally",
     "original version",
+    "first version",
+    "no longer",
+    "superseded",
+    "obsolete",
 ]
 
-# Known domain names for domain_hint detection
-_KNOWN_DOMAINS: list[str] = [
-    "pytorch",
-    "torch",
-    "numpy",
-    "pandas",
-    "scikit",
-    "sklearn",
-    "tensorflow",
-    "keras",
-    "huggingface",
-    "transformers",
-    "fastapi",
-    "langchain",
-    "llama",
-    "openai",
-]
-
-# Regex: matches version-like patterns such as:
-#   v1.13, 2.0, 1.x, 2.2.1, 1.0.0
-_VERSION_RE = re.compile(
-    r"\bv?(\d+(?:[._]\d+)*(?:[._]x)?)\b",
+_TEMPORAL_RE = re.compile(
+    r"\b(?:" + "|".join(re.escape(p) for p in _TEMPORAL_PHRASES) + r")\b",
     re.IGNORECASE,
 )
 
-
-# ── Dataclass ────────────────────────────────────────────────────────────────
+# ── Version detection ───────────────────────────────────────────────────────
+#
+# A bare integer is NOT a version. The previous pattern was
+#     \bv?(\d+(?:[._]\d+)*(?:[._]x)?)\b
+# which matched the "3" in "what are the top 3 methods?" and the "5" in
+# "list 5 examples". That single false positive was severe: a spurious
+# version_hint zeroes the version boost for every correctly-dated chunk and
+# (under the old coupling) unlocked superseded content on ordinary questions.
+#
+# A version hint now requires one of three unambiguous forms:
+#   1. a "v" prefix              v2, v1.13, v2.2.1
+#   2. two or more components    2.2, 1.13.1, 1_13
+#   3. an explicit keyword       version 2, release 3
+# Each form also accepts an "x" wildcard component: v1.x, 1.x, version 2.x
+_VERSION_PATTERNS = [
+    # v-prefixed: v2, v1.13, v1.x
+    re.compile(r"\bv(\d+(?:[._](?:\d+|x))*)\b", re.IGNORECASE),
+    # dotted/underscored multi-component: 2.2, 1.13.1, 1.x
+    re.compile(r"\b(\d+(?:[._](?:\d+|x))+)\b", re.IGNORECASE),
+    # keyword-introduced: "version 2", "release 3.1"
+    re.compile(r"\b(?:version|release)\s+v?(\d+(?:[._](?:\d+|x))*)\b", re.IGNORECASE),
+]
 
 
 @dataclass
@@ -72,27 +87,29 @@ class QueryAnalysis:
     """Structured intent extracted from a raw query string."""
 
     version_hint: str | None = None
-    """The first detected version string (normalised, e.g. '1.13', '2.0', '1.x')."""
+    """First detected version, normalised (leading 'v' stripped, '_' → '.')."""
 
     temporal_qualifier: bool = False
-    """True when the user appears to be asking about an *older* version of a document."""
+    """True when the query uses explicitly historical wording."""
 
-    domain_hint: str | None = None
-    """A known domain/library name found in the query (lowercase)."""
+    version_matches: list[str] = field(default_factory=list)
+    """All normalised version strings found, in order (debugging / tests)."""
 
-    raw_matches: list[str] = field(default_factory=list)
-    """All version strings found in the query (for debugging)."""
+    @property
+    def wants_historical_sources(self) -> bool:
+        """
+        True when superseded chunks should remain eligible for retrieval.
 
-
-# ── Main entry-point ─────────────────────────────────────────────────────────
+        That is the case when the user either used historical wording, or
+        pinned a specific version — you cannot answer "how did this work in
+        v1.13?" without access to chunks that v2.x has superseded.
+        """
+        return self.temporal_qualifier or self.version_hint is not None
 
 
 def analyze(query_text: str) -> QueryAnalysis:
     """
     Analyse *query_text* and return a :class:`QueryAnalysis`.
-
-    This function is deliberately free of LLM calls — it uses only
-    compiled regex and substring searches so it adds negligible latency.
 
     Args:
         query_text: The raw natural-language query string.
@@ -100,33 +117,33 @@ def analyze(query_text: str) -> QueryAnalysis:
     Returns:
         A :class:`QueryAnalysis` dataclass.
     """
-    lower = query_text.lower()
+    if not query_text or not query_text.strip():
+        return QueryAnalysis()
 
-    # 1. Version hint ----------------------------------------------------------
-    version_matches = _VERSION_RE.findall(query_text)
-    # Normalise: replace underscores with dots, strip leading "v"
-    normalised = [v.replace("_", ".").lstrip("vV") for v in version_matches]
-    version_hint = normalised[0] if normalised else None
+    # 1. Version hints ---------------------------------------------------------
+    # Collected with positions and sorted, so that for a query mentioning
+    # several versions the hint is the one the user wrote FIRST, regardless of
+    # which pattern happened to match it.
+    found: list[tuple[int, str]] = []
+    for pattern in _VERSION_PATTERNS:
+        for m in pattern.finditer(query_text):
+            normalised = m.group(1).replace("_", ".").lstrip("vV").lower()
+            if normalised:
+                found.append((m.start(), normalised))
 
-    # 2. Temporal qualifier ----------------------------------------------------
-    temporal_qualifier = any(kw in lower for kw in _TEMPORAL_KEYWORDS)
+    found.sort(key=lambda pair: pair[0])
+    matches: list[str] = []
+    for _, normalised in found:
+        if normalised not in matches:
+            matches.append(normalised)
 
-    # Edge case: if a version hint is present (e.g. "PyTorch 1.x"), that
-    # itself implies the user may want results from that specific (older) era,
-    # so we treat it as a temporal qualifier too.
-    if version_hint and not temporal_qualifier:
-        temporal_qualifier = True
+    version_hint = matches[0] if matches else None
 
-    # 3. Domain hint -----------------------------------------------------------
-    domain_hint: str | None = None
-    for domain in _KNOWN_DOMAINS:
-        if domain in lower:
-            domain_hint = domain
-            break
+    # 2. Historical wording ----------------------------------------------------
+    temporal_qualifier = bool(_TEMPORAL_RE.search(query_text))
 
     return QueryAnalysis(
         version_hint=version_hint,
         temporal_qualifier=temporal_qualifier,
-        domain_hint=domain_hint,
-        raw_matches=version_matches,
+        version_matches=matches,
     )

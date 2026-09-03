@@ -80,8 +80,6 @@ def predict(pairs: list[tuple[str, str]]) -> list[float]:
     # CrossEncoder returns a 2-D array: [N, 3] for NLI (entail / neutral / contra)
     # The contradiction label index is 0 for deberta-v3-small trained on NLI.
     # We use softmax to get probabilities.
-    import numpy as np
-
     raw = _model.predict(pairs, apply_softmax=True)   # shape (N, 3)
     # Label order for cross-encoder/nli-deberta-v3-small: [contradiction, entailment, neutral]
     # Index 0 = contradiction
