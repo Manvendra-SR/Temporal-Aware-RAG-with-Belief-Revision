@@ -1,0 +1,5252 @@
+{
+  "meta": {
+    "timestamp": "2026-09-19T18:52:37",
+    "git_commit": "9733a9c",
+    "backend_url": "http://localhost:8001",
+    "max_chunks": 20,
+    "answer_model": "openai/gpt-oss-120b",
+    "judge_model": "openai/gpt-oss-120b",
+    "primary_grader": "llm-judge",
+    "temporal_analyzer_fallbacks": 2
+  },
+  "summary": {
+    "normal_correct": 9,
+    "temporal_correct": 27,
+    "n": 30,
+    "normal_pct": 30.0,
+    "temporal_pct": 90.0,
+    "improvement_pp": 60.0,
+    "keyword_normal_correct": 9,
+    "keyword_temporal_correct": 26
+  },
+  "results": [
+    {
+      "id": "Q01",
+      "type": "current",
+      "question": "How many days of annual leave do Northwind employees get per year?",
+      "answer": "24 days per year.",
+      "supporting_versions": [
+        "5.0"
+      ],
+      "normal": {
+        "answer": "The policy documents do not all give the same figure for annual leave.  \n\n* Some sections say full‑time employees receive **20 days** of paid annual leave per calendar year【SOURCE 1】, 【SOURCE 3】.  \n* One section lists **18 days** of paid annual leave per calendar year【SOURCE 2】.  \n* Other sections state **24 days** of paid annual leave per calendar year【SOURCE 6】, 【SOURCE 7】.  \n\nBecause the sources contain conflicting information, the exact number of annual leave days for Northwind employees cannot be determined from the provided documents.",
+        "correct": false,
+        "keyword_correct": false,
+        "grading": "judge",
+        "judge_reason": "Candidate does not commit to the reference answer of 24 days and claims the information is indeterminate",
+        "error": null,
+        "latency_ms": 2178,
+        "used_versions": [
+          "1.0",
+          "2.0",
+          "3.0",
+          "4.0",
+          "5.0"
+        ],
+        "sources": [
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          }
+        ],
+        "intent": null,
+        "analysis_source": null,
+        "analysis_error": null,
+        "filter": null,
+        "confidence": "none"
+      },
+      "temporal": {
+        "answer": "Northwind full‑time employees receive **24 days of paid annual leave each calendar year** [Source 1].",
+        "correct": true,
+        "keyword_correct": true,
+        "grading": "judge",
+        "judge_reason": "Candidate matches the reference answer of 24 days per year",
+        "error": null,
+        "latency_ms": 1612,
+        "used_versions": [
+          "5.0"
+        ],
+        "sources": [
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          }
+        ],
+        "intent": "current",
+        "analysis_source": "llm",
+        "analysis_error": null,
+        "filter": {
+          "rule": "valid today (2026-09-19)",
+          "scoring": "relevance + recency",
+          "candidates_retrieved": 30,
+          "candidates_valid": 6,
+          "candidates_kept": 6
+        },
+        "confidence": "none"
+      }
+    },
+    {
+      "id": "Q02",
+      "type": "current",
+      "question": "How many days per week can employees work remotely?",
+      "answer": "Up to 2 days per week.",
+      "supporting_versions": [
+        "5.0"
+      ],
+      "temporal": {
+        "answer": "Employees are allowed to work remotely for **up to 2 days per week**, provided they obtain prior approval from their line manager [Source 1].",
+        "correct": true,
+        "keyword_correct": true,
+        "grading": "judge",
+        "judge_reason": "Candidate matches the reference answer of up to 2 days per week",
+        "error": null,
+        "latency_ms": 1303,
+        "used_versions": [
+          "5.0"
+        ],
+        "sources": [
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          }
+        ],
+        "intent": "current",
+        "analysis_source": "llm",
+        "analysis_error": null,
+        "filter": {
+          "rule": "valid today (2026-09-19)",
+          "scoring": "relevance + recency",
+          "candidates_retrieved": 30,
+          "candidates_valid": 6,
+          "candidates_kept": 6
+        },
+        "confidence": "none"
+      },
+      "normal": {
+        "answer": "The policy documents give three different limits for remote work:\n\n* One version says employees may work remotely **up to 1 day per week** [Source 1].  \n* Another version says employees may work remotely **up to 2 days per week** [Source 3] and [Source 4].  \n* Two other versions say employees may work remotely **up to 3 days per week** [Source 2] and [Source 5].\n\nBecause the sources contain conflicting statements, the exact number of remote‑work days allowed per week cannot be determined from the provided information.",
+        "correct": false,
+        "keyword_correct": false,
+        "grading": "judge",
+        "judge_reason": "Candidate does not state the reference answer of up to 2 days per week",
+        "error": null,
+        "latency_ms": 2304,
+        "used_versions": [
+          "1.0",
+          "2.0",
+          "3.0",
+          "4.0",
+          "5.0"
+        ],
+        "sources": [
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          }
+        ],
+        "intent": null,
+        "analysis_source": null,
+        "analysis_error": null,
+        "filter": null,
+        "confidence": "none"
+      }
+    },
+    {
+      "id": "Q03",
+      "type": "current",
+      "question": "What is the notice period for resignation after probation?",
+      "answer": "30 days.",
+      "supporting_versions": [
+        "5.0"
+      ],
+      "normal": {
+        "answer": "The policy says that after the six‑month probation period, either the employee or the company must give written notice to end the employment, but the length of that notice differs among the documents:\n\n* 60 days’ notice is specified in [SOURCE 1] and [SOURCE 2].  \n* 45 days’ notice is specified in [SOURCE 3] and [SOURCE 4].  \n* 30 days’ notice is specified in [SOURCE 5].\n\nBecause the sources contain conflicting statements, the exact notice period for resignation after probation cannot be determined definitively from the provided documents.",
+        "correct": false,
+        "keyword_correct": false,
+        "grading": "judge",
+        "judge_reason": "Candidate does not commit to the 30‑day notice period and claims uncertainty.",
+        "error": null,
+        "latency_ms": 12656,
+        "used_versions": [
+          "1.0",
+          "2.0",
+          "3.0",
+          "4.0",
+          "5.0"
+        ],
+        "sources": [
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          }
+        ],
+        "intent": null,
+        "analysis_source": null,
+        "analysis_error": null,
+        "filter": null,
+        "confidence": "none"
+      },
+      "temporal": {
+        "answer": "After successfully completing the 6‑month probation period, either the employee or Northwind Technologies must provide **30 days of written notice** to terminate the employment relationship. This notice period cannot be waived unless there is a written agreement from HR【SOURCE 1】.",
+        "correct": true,
+        "keyword_correct": true,
+        "grading": "judge",
+        "judge_reason": "Candidate correctly states the notice period as 30 days, matching the reference answer.",
+        "error": null,
+        "latency_ms": 9927,
+        "used_versions": [
+          "5.0"
+        ],
+        "sources": [
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          }
+        ],
+        "intent": "current",
+        "analysis_source": "llm",
+        "analysis_error": null,
+        "filter": {
+          "rule": "valid today (2026-09-19)",
+          "scoring": "relevance + recency",
+          "candidates_retrieved": 30,
+          "candidates_valid": 6,
+          "candidates_kept": 6
+        },
+        "confidence": "none"
+      }
+    },
+    {
+      "id": "Q04",
+      "type": "current",
+      "question": "How many weeks of paid parental leave does the company provide?",
+      "answer": "26 weeks.",
+      "supporting_versions": [
+        "5.0"
+      ],
+      "temporal": {
+        "answer": "The company provides **26 weeks of paid parental leave** [Source 1].",
+        "correct": true,
+        "keyword_correct": true,
+        "grading": "judge",
+        "judge_reason": "Candidate matches the reference answer of 26 weeks",
+        "error": null,
+        "latency_ms": 12506,
+        "used_versions": [
+          "5.0"
+        ],
+        "sources": [
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          }
+        ],
+        "intent": "current",
+        "analysis_source": "llm",
+        "analysis_error": null,
+        "filter": {
+          "rule": "valid today (2026-09-19)",
+          "scoring": "relevance + recency",
+          "candidates_retrieved": 30,
+          "candidates_valid": 6,
+          "candidates_kept": 6
+        },
+        "confidence": "none"
+      },
+      "normal": {
+        "answer": "The policy documents contain several different figures for paid parental leave:\n\n- Some versions of the policy state that full‑time employees receive **12 weeks** of paid parental leave [Source 1], [Source 3], [Source 5].\n- One version specifies **16 weeks** of paid parental leave [Source 4].\n- Another version lists **26 weeks** of paid parental leave [Source 2].\n\nThus, the documents indicate that the company provides anywhere from **12 to 26 weeks** of paid parental leave, depending on which version of the policy is being referenced.",
+        "correct": false,
+        "keyword_correct": false,
+        "grading": "judge",
+        "judge_reason": "Candidate does not commit to the reference answer of 26 weeks, instead gives a range of values.",
+        "error": null,
+        "latency_ms": 14452,
+        "used_versions": [
+          "1.0",
+          "2.0",
+          "3.0",
+          "4.0",
+          "5.0"
+        ],
+        "sources": [
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          }
+        ],
+        "intent": null,
+        "analysis_source": null,
+        "analysis_error": null,
+        "filter": null,
+        "confidence": "none"
+      }
+    },
+    {
+      "id": "Q05",
+      "type": "current",
+      "question": "What is the maximum amount a manager can approve for business travel expenses per trip?",
+      "answer": "INR 60,000 per trip.",
+      "supporting_versions": [
+        "5.0"
+      ],
+      "normal": {
+        "answer": "The policy states that a manager may approve business‑travel expenses up to a certain ceiling without further sign‑off. The highest ceiling mentioned in the documents is **INR 60,000 per trip**【SOURCE 4】. (Other sections of the policy list lower limits of INR 25,000【SOURCE 1】【SOURCE 2】 and INR 40,000【SOURCE 3】【SOURCE 5】.)",
+        "correct": true,
+        "keyword_correct": false,
+        "grading": "judge",
+        "judge_reason": "Candidate correctly states the maximum amount as INR 60,000 per trip, matching the reference.",
+        "error": null,
+        "latency_ms": 11362,
+        "used_versions": [
+          "1.0",
+          "2.0",
+          "3.0",
+          "4.0",
+          "5.0"
+        ],
+        "sources": [
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          }
+        ],
+        "intent": null,
+        "analysis_source": null,
+        "analysis_error": null,
+        "filter": null,
+        "confidence": "none"
+      },
+      "temporal": {
+        "answer": "A manager can approve business‑travel expenses of up to **INR 60,000 per trip** without needing any additional sign‑off【SOURCE 1】.",
+        "correct": true,
+        "keyword_correct": true,
+        "grading": "judge",
+        "judge_reason": "Candidate matches the reference amount of INR 60,000 per trip",
+        "error": null,
+        "latency_ms": 8709,
+        "used_versions": [
+          "5.0"
+        ],
+        "sources": [
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          }
+        ],
+        "intent": "current",
+        "analysis_source": "llm",
+        "analysis_error": null,
+        "filter": {
+          "rule": "valid today (2026-09-19)",
+          "scoring": "relevance + recency",
+          "candidates_retrieved": 30,
+          "candidates_valid": 6,
+          "candidates_kept": 6
+        },
+        "confidence": "none"
+      }
+    },
+    {
+      "id": "Q06",
+      "type": "current",
+      "question": "What is the sum insured under the company's group health insurance?",
+      "answer": "INR 10 lakh.",
+      "supporting_versions": [
+        "5.0"
+      ],
+      "temporal": {
+        "answer": "The group health‑insurance policy provides a sum insured of **INR 10 lakh** per employee [Source 1].",
+        "correct": true,
+        "keyword_correct": true,
+        "grading": "judge",
+        "judge_reason": "Candidate answer matches the reference answer of INR 10 lakh",
+        "error": null,
+        "latency_ms": 13843,
+        "used_versions": [
+          "5.0"
+        ],
+        "sources": [
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          }
+        ],
+        "intent": "current",
+        "analysis_source": "llm",
+        "analysis_error": null,
+        "filter": {
+          "rule": "valid today (2026-09-19)",
+          "scoring": "relevance + recency",
+          "candidates_retrieved": 30,
+          "candidates_valid": 6,
+          "candidates_kept": 6
+        },
+        "confidence": "none"
+      },
+      "normal": {
+        "answer": "The policy documents give different figures for the group‑health‑insurance sum insured:\n\n* Some sections state the coverage is **INR 5 lakh** per employee 【SOURCE 1】, 【SOURCE 4】, 【SOURCE 5】.  \n* One section lists the coverage as **INR 3 lakh** 【SOURCE 2】.  \n* Another section lists the coverage as **INR 10 lakh** 【SOURCE 3】.  \n\nBecause the sources provide conflicting amounts, the exact sum insured cannot be determined from the available information.",
+        "correct": false,
+        "keyword_correct": false,
+        "grading": "judge",
+        "judge_reason": "Candidate does not commit to the reference answer of INR 10 lakh",
+        "error": null,
+        "latency_ms": 14250,
+        "used_versions": [
+          "1.0",
+          "2.0",
+          "3.0",
+          "4.0",
+          "5.0"
+        ],
+        "sources": [
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          }
+        ],
+        "intent": null,
+        "analysis_source": null,
+        "analysis_error": null,
+        "filter": null,
+        "confidence": "none"
+      }
+    },
+    {
+      "id": "Q07",
+      "type": "point_in_time",
+      "question": "How many days of annual leave were employees entitled to on 2022-06-15?",
+      "answer": "20 days per year.",
+      "supporting_versions": [
+        "2.0"
+      ],
+      "normal": {
+        "answer": "I’m sorry, but the provided documents do not specify which leave‑entitlement policy was in effect on June 15 2022, so I cannot determine the exact number of annual‑leave days employees were entitled to on that date.",
+        "correct": false,
+        "keyword_correct": false,
+        "grading": "judge",
+        "judge_reason": "Candidate does not state the 20 days per year required by the reference answer",
+        "error": null,
+        "latency_ms": 13221,
+        "used_versions": [
+          "1.0",
+          "2.0",
+          "3.0",
+          "4.0",
+          "5.0"
+        ],
+        "sources": [
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          }
+        ],
+        "intent": null,
+        "analysis_source": null,
+        "analysis_error": null,
+        "filter": null,
+        "confidence": "none"
+      },
+      "temporal": {
+        "answer": "Employees were entitled to **20 days of paid annual leave per calendar year** on 2022‑06‑15 [Source 1].",
+        "correct": true,
+        "keyword_correct": true,
+        "grading": "judge",
+        "judge_reason": "Candidate answer matches the reference of 20 days",
+        "error": null,
+        "latency_ms": 12811,
+        "used_versions": [
+          "2.0"
+        ],
+        "sources": [
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          }
+        ],
+        "intent": "point_in_time",
+        "analysis_source": "llm",
+        "analysis_error": null,
+        "filter": {
+          "rule": "valid on 2022-06-15",
+          "scoring": "relevance only",
+          "candidates_retrieved": 30,
+          "candidates_valid": 6,
+          "candidates_kept": 6
+        },
+        "confidence": "none"
+      }
+    },
+    {
+      "id": "Q08",
+      "type": "point_in_time",
+      "question": "How many days per week could employees work remotely as of 2023-06-15?",
+      "answer": "Up to 3 days per week.",
+      "supporting_versions": [
+        "3.0"
+      ],
+      "temporal": {
+        "answer": "Employees could work remotely up to **three days per week**, provided they obtained prior approval from their line manager [Source 1].",
+        "correct": true,
+        "keyword_correct": true,
+        "grading": "judge",
+        "judge_reason": "Candidate matches the reference answer of up to 3 days per week",
+        "error": null,
+        "latency_ms": 13209,
+        "used_versions": [
+          "3.0"
+        ],
+        "sources": [
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          }
+        ],
+        "intent": "point_in_time",
+        "analysis_source": "llm",
+        "analysis_error": null,
+        "filter": {
+          "rule": "valid on 2023-06-15",
+          "scoring": "relevance only",
+          "candidates_retrieved": 30,
+          "candidates_valid": 6,
+          "candidates_kept": 6
+        },
+        "confidence": "none"
+      },
+      "normal": {
+        "answer": "I’m sorry, but the provided sources do not include any information that indicates which remote‑work policy was in effect on 2023‑06‑15. Without a date‑specific reference, I cannot determine how many days per week employees were allowed to work remotely on that date.",
+        "correct": false,
+        "keyword_correct": false,
+        "grading": "judge",
+        "judge_reason": "Candidate does not state the required answer of up to 3 days per week",
+        "error": null,
+        "latency_ms": 13153,
+        "used_versions": [
+          "1.0",
+          "2.0",
+          "3.0",
+          "4.0",
+          "5.0"
+        ],
+        "sources": [
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          }
+        ],
+        "intent": null,
+        "analysis_source": null,
+        "analysis_error": null,
+        "filter": null,
+        "confidence": "none"
+      }
+    },
+    {
+      "id": "Q09",
+      "type": "point_in_time",
+      "question": "What was the notice period for resignation on 2021-09-15?",
+      "answer": "60 days.",
+      "supporting_versions": [
+        "1.0"
+      ],
+      "normal": {
+        "answer": "I’m sorry, but the provided sources do not indicate which notice‑period rule was in effect on 2021‑09‑15, so I cannot determine the applicable notice period for resignation on that date.",
+        "correct": false,
+        "keyword_correct": false,
+        "grading": "judge",
+        "judge_reason": "Candidate did not provide the 60‑day notice period and claimed the information was unavailable",
+        "error": null,
+        "latency_ms": 14190,
+        "used_versions": [
+          "1.0",
+          "2.0",
+          "3.0",
+          "4.0",
+          "5.0"
+        ],
+        "sources": [
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          }
+        ],
+        "intent": null,
+        "analysis_source": null,
+        "analysis_error": null,
+        "filter": null,
+        "confidence": "none"
+      },
+      "temporal": {
+        "answer": "On 15 September 2021, the employee policy required a **60‑day written notice** to resign (or to be terminated) after the probation period. This notice period could not be waived unless HR gave written agreement [Source 1].",
+        "correct": true,
+        "keyword_correct": true,
+        "grading": "judge",
+        "judge_reason": "Candidate matches the reference notice period of 60 days",
+        "error": null,
+        "latency_ms": 14587,
+        "used_versions": [
+          "1.0"
+        ],
+        "sources": [
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          }
+        ],
+        "intent": "point_in_time",
+        "analysis_source": "llm",
+        "analysis_error": null,
+        "filter": {
+          "rule": "valid on 2021-09-15",
+          "scoring": "relevance only",
+          "candidates_retrieved": 30,
+          "candidates_valid": 6,
+          "candidates_kept": 6
+        },
+        "confidence": "none"
+      }
+    },
+    {
+      "id": "Q10",
+      "type": "point_in_time",
+      "question": "How many weeks of paid parental leave were offered as of 2024-08-15?",
+      "answer": "16 weeks.",
+      "supporting_versions": [
+        "4.0"
+      ],
+      "temporal": {
+        "answer": "Northwind Technologies offered **16 weeks of paid parental leave** as of 2024‑08‑15 【SOURCE 1】.",
+        "correct": true,
+        "keyword_correct": true,
+        "grading": "judge",
+        "judge_reason": "Candidate matches the reference answer of 16 weeks",
+        "error": null,
+        "latency_ms": 13287,
+        "used_versions": [
+          "4.0"
+        ],
+        "sources": [
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          }
+        ],
+        "intent": "point_in_time",
+        "analysis_source": "llm",
+        "analysis_error": null,
+        "filter": {
+          "rule": "valid on 2024-08-15",
+          "scoring": "relevance only",
+          "candidates_retrieved": 30,
+          "candidates_valid": 6,
+          "candidates_kept": 6
+        },
+        "confidence": "none"
+      },
+      "normal": {
+        "answer": "I’m sorry, but the provided documents do not include any date‑specific information that lets me determine which version of the parental‑leave policy was in effect on 2024‑08‑15. The sources list several different entitlement levels (12 weeks, 16 weeks, and 26 weeks) but do not indicate when each applied, so I cannot answer the question with certainty.",
+        "correct": false,
+        "keyword_correct": false,
+        "grading": "judge",
+        "judge_reason": "Candidate does not state the 16 weeks required and claims insufficient information",
+        "error": null,
+        "latency_ms": 13258,
+        "used_versions": [
+          "1.0",
+          "2.0",
+          "3.0",
+          "4.0",
+          "5.0"
+        ],
+        "sources": [
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          }
+        ],
+        "intent": null,
+        "analysis_source": null,
+        "analysis_error": null,
+        "filter": null,
+        "confidence": "none"
+      }
+    },
+    {
+      "id": "Q11",
+      "type": "point_in_time",
+      "question": "What was the maximum travel expense a manager could approve per trip on 2022-10-15?",
+      "answer": "INR 25,000 per trip.",
+      "supporting_versions": [
+        "2.0"
+      ],
+      "normal": {
+        "answer": "I’m sorry, but the provided documents do not indicate which version of the travel‑expense policy was in effect on 2022‑10‑15, so I cannot determine the maximum amount a manager could approve on that date.",
+        "correct": false,
+        "keyword_correct": false,
+        "grading": "judge",
+        "judge_reason": "Candidate claims the information is unavailable, contradicting the reference answer of INR 25,000 per trip.",
+        "error": null,
+        "latency_ms": 14775,
+        "used_versions": [
+          "1.0",
+          "2.0",
+          "3.0",
+          "4.0",
+          "5.0"
+        ],
+        "sources": [
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          }
+        ],
+        "intent": null,
+        "analysis_source": null,
+        "analysis_error": null,
+        "filter": null,
+        "confidence": "none"
+      },
+      "temporal": {
+        "answer": "On 2022‑10‑15, a manager could approve business‑travel expenses of up to **INR 25,000 per trip** without needing any additional sign‑off [Source 1].",
+        "correct": true,
+        "keyword_correct": true,
+        "grading": "judge",
+        "judge_reason": "Candidate answer matches the reference amount of INR 25,000 per trip",
+        "error": null,
+        "latency_ms": 11860,
+        "used_versions": [
+          "2.0"
+        ],
+        "sources": [
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          }
+        ],
+        "intent": "point_in_time",
+        "analysis_source": "llm",
+        "analysis_error": null,
+        "filter": {
+          "rule": "valid on 2022-10-15",
+          "scoring": "relevance only",
+          "candidates_retrieved": 30,
+          "candidates_valid": 6,
+          "candidates_kept": 6
+        },
+        "confidence": "none"
+      }
+    },
+    {
+      "id": "Q12",
+      "type": "point_in_time",
+      "question": "What was the sum insured under the group health insurance on 2021-08-15?",
+      "answer": "INR 3 lakh.",
+      "supporting_versions": [
+        "1.0"
+      ],
+      "temporal": {
+        "answer": "The group health insurance provided to employees had a sum insured of **INR 3 lakh** on 2021‑08‑15【SOURCE 1】.",
+        "correct": true,
+        "keyword_correct": true,
+        "grading": "judge",
+        "judge_reason": "Candidate answer matches the reference answer's sum insured of INR 3 lakh",
+        "error": null,
+        "latency_ms": 10115,
+        "used_versions": [
+          "1.0"
+        ],
+        "sources": [
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          }
+        ],
+        "intent": "point_in_time",
+        "analysis_source": "llm",
+        "analysis_error": null,
+        "filter": {
+          "rule": "valid on 2021-08-15",
+          "scoring": "relevance only",
+          "candidates_retrieved": 30,
+          "candidates_valid": 6,
+          "candidates_kept": 6
+        },
+        "confidence": "none"
+      },
+      "normal": {
+        "answer": "I’m sorry, but the provided sources do not indicate which group‑health‑insurance sum‑insured amount was in effect on 2021‑08‑15, so I cannot determine the answer from the available information.",
+        "correct": false,
+        "keyword_correct": false,
+        "grading": "judge",
+        "judge_reason": "Candidate claims the information is unavailable, contradicting the reference answer of INR 3 lakh.",
+        "error": null,
+        "latency_ms": 15360,
+        "used_versions": [
+          "1.0",
+          "2.0",
+          "3.0",
+          "4.0",
+          "5.0"
+        ],
+        "sources": [
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          }
+        ],
+        "intent": null,
+        "analysis_source": null,
+        "analysis_error": null,
+        "filter": null,
+        "confidence": "none"
+      }
+    },
+    {
+      "id": "Q13",
+      "type": "point_in_time",
+      "question": "What was the notice period for resignation on 2024-03-15?",
+      "answer": "45 days.",
+      "supporting_versions": [
+        "4.0"
+      ],
+      "normal": {
+        "answer": "I’m sorry, but the provided sources give conflicting notice‑period values (60 days, 45 days, and 30 days) and do not indicate which version was in effect on 2024‑03‑15. Therefore, I cannot determine the applicable notice period for that date from the available information.",
+        "correct": false,
+        "keyword_correct": false,
+        "grading": "judge",
+        "judge_reason": "Candidate does not state the 45‑day notice period required by the reference answer",
+        "error": null,
+        "latency_ms": 12148,
+        "used_versions": [
+          "1.0",
+          "2.0",
+          "3.0",
+          "4.0",
+          "5.0"
+        ],
+        "sources": [
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          }
+        ],
+        "intent": null,
+        "analysis_source": null,
+        "analysis_error": null,
+        "filter": null,
+        "confidence": "none"
+      },
+      "temporal": {
+        "answer": "On 2024‑03‑15, the employee‑resignation notice period was **45 days of written notice** (after the probation period), and it could not be waived without a written agreement from HR [Source 1].",
+        "correct": true,
+        "keyword_correct": true,
+        "grading": "judge",
+        "judge_reason": "Candidate matches the reference notice period of 45 days",
+        "error": null,
+        "latency_ms": 13030,
+        "used_versions": [
+          "4.0"
+        ],
+        "sources": [
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          }
+        ],
+        "intent": "point_in_time",
+        "analysis_source": "llm",
+        "analysis_error": null,
+        "filter": {
+          "rule": "valid on 2024-03-15",
+          "scoring": "relevance only",
+          "candidates_retrieved": 30,
+          "candidates_valid": 6,
+          "candidates_kept": 6
+        },
+        "confidence": "none"
+      }
+    },
+    {
+      "id": "Q14",
+      "type": "point_in_time",
+      "question": "How many days per week could employees work remotely on 2022-01-15?",
+      "answer": "Up to 1 day per week.",
+      "supporting_versions": [
+        "1.0"
+      ],
+      "temporal": {
+        "answer": "On 2022‑01‑15 employees were allowed to work remotely **up to 1 day per week**, provided they obtained prior manager approval [Source 1].",
+        "correct": true,
+        "keyword_correct": true,
+        "grading": "judge",
+        "judge_reason": "Candidate answer matches the reference answer of up to 1 day per week",
+        "error": null,
+        "latency_ms": 14939,
+        "used_versions": [
+          "1.0"
+        ],
+        "sources": [
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          }
+        ],
+        "intent": "point_in_time",
+        "analysis_source": "llm",
+        "analysis_error": null,
+        "filter": {
+          "rule": "valid on 2022-01-15",
+          "scoring": "relevance only",
+          "candidates_retrieved": 30,
+          "candidates_valid": 6,
+          "candidates_kept": 6
+        },
+        "confidence": "none"
+      },
+      "normal": {
+        "answer": "The provided documents describe several different remote‑work allowances (up to 1 day per week, up to 2 days per week, and up to 3 days per week), but none of them indicate which version was in effect on 15 January 2022. Because the sources do not contain a date‑specific policy, I cannot determine how many remote days per week employees were allowed on that date.",
+        "correct": false,
+        "keyword_correct": false,
+        "grading": "judge",
+        "judge_reason": "Candidate does not provide the reference answer of up to 1 day per week",
+        "error": null,
+        "latency_ms": 14299,
+        "used_versions": [
+          "1.0",
+          "2.0",
+          "3.0",
+          "4.0",
+          "5.0"
+        ],
+        "sources": [
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          }
+        ],
+        "intent": null,
+        "analysis_source": null,
+        "analysis_error": null,
+        "filter": null,
+        "confidence": "none"
+      }
+    },
+    {
+      "id": "Q15",
+      "type": "historical",
+      "question": "How many days per week could employees work remotely when the policy was first issued?",
+      "answer": "Up to 1 day per week.",
+      "supporting_versions": [
+        "1.0"
+      ],
+      "normal": {
+        "answer": "When the policy was first issued, employees were allowed to work remotely up to **three days per week** [Source 1].",
+        "correct": false,
+        "keyword_correct": false,
+        "grading": "judge",
+        "judge_reason": "Candidate answer states three days per week, which conflicts with the reference answer of up to one day per week.",
+        "error": null,
+        "latency_ms": 15428,
+        "used_versions": [
+          "1.0",
+          "2.0",
+          "3.0",
+          "4.0",
+          "5.0"
+        ],
+        "sources": [
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          }
+        ],
+        "intent": null,
+        "analysis_source": null,
+        "analysis_error": null,
+        "filter": null,
+        "confidence": "none"
+      },
+      "temporal": {
+        "answer": "Employees were allowed to work remotely **up to 2 days per week** under the policy when it was first issued (effective 2025‑03‑01) [Source 1].",
+        "correct": false,
+        "keyword_correct": false,
+        "grading": "judge",
+        "judge_reason": "Candidate states up to 2 days per week, contradicting reference of up to 1 day",
+        "error": null,
+        "latency_ms": 13733,
+        "used_versions": [
+          "5.0"
+        ],
+        "sources": [
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          }
+        ],
+        "intent": "current",
+        "analysis_source": "default",
+        "analysis_error": "LLM output failed validation: Value error, point_in_time requires as_of",
+        "filter": {
+          "rule": "valid today (2026-09-19)",
+          "scoring": "relevance + recency",
+          "candidates_retrieved": 30,
+          "candidates_valid": 6,
+          "candidates_kept": 6
+        },
+        "confidence": "none"
+      }
+    },
+    {
+      "id": "Q16",
+      "type": "historical",
+      "question": "What was the earliest health insurance sum insured the company offered?",
+      "answer": "INR 3 lakh.",
+      "supporting_versions": [
+        "1.0"
+      ],
+      "temporal": {
+        "answer": "The first version of the policy (Northwind Technologies Employee Policy v1.0, valid 2021‑04‑01 → 2022‑03‑01) provided group health‑insurance coverage with a sum insured of **INR 3 lakh** [ SOURCE 2 ].  \n\nLater versions raised the coverage (to INR 5 lakh in v2.0, v3.0 and v4.0, and to INR 10 lakh in v5.0), but the earliest amount offered was the INR 3 lakh in the 2021‑2022 period.",
+        "correct": true,
+        "keyword_correct": false,
+        "grading": "judge",
+        "judge_reason": "Candidate correctly identifies the earliest sum insured as INR 3 lakh",
+        "error": null,
+        "latency_ms": 28433,
+        "used_versions": [
+          "1.0",
+          "2.0",
+          "3.0",
+          "4.0",
+          "5.0"
+        ],
+        "sources": [
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": false
+          }
+        ],
+        "intent": "historical",
+        "analysis_source": "llm",
+        "analysis_error": null,
+        "filter": {
+          "rule": "all versions (no time filter)",
+          "scoring": "relevance only",
+          "candidates_retrieved": 30,
+          "candidates_valid": 30,
+          "candidates_kept": 20
+        },
+        "confidence": "high"
+      },
+      "normal": {
+        "answer": "The earliest health‑insurance coverage mentioned in the policy documents provided a sum insured of **INR 3 lakh** per employee【SOURCE 2】.",
+        "correct": true,
+        "keyword_correct": true,
+        "grading": "judge",
+        "judge_reason": "Candidate matches the reference answer of INR 3 lakh",
+        "error": null,
+        "latency_ms": 10607,
+        "used_versions": [
+          "1.0",
+          "2.0",
+          "3.0",
+          "4.0",
+          "5.0"
+        ],
+        "sources": [
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          }
+        ],
+        "intent": null,
+        "analysis_source": null,
+        "analysis_error": null,
+        "filter": null,
+        "confidence": "none"
+      }
+    },
+    {
+      "id": "Q17",
+      "type": "historical",
+      "question": "How many weeks of paid parental leave did the company offer before 2024?",
+      "answer": "12 weeks.",
+      "supporting_versions": [
+        "1.0",
+        "2.0",
+        "3.0"
+      ],
+      "normal": {
+        "answer": "The available policy excerpts give three different figures for paid parental leave—12 weeks (Sources 1, 2, 5), 16 weeks (Source 4) and 26 weeks (Source 3). However, none of the sources indicate the date or version of the policy, so it is not possible to determine which of these amounts applied specifically “before 2024.” Therefore, the documents do not contain enough information to answer the question.",
+        "correct": false,
+        "keyword_correct": false,
+        "grading": "judge",
+        "judge_reason": "Candidate does not state the 12 weeks required by the reference and claims insufficient information.",
+        "error": null,
+        "latency_ms": 11188,
+        "used_versions": [
+          "1.0",
+          "2.0",
+          "3.0",
+          "4.0",
+          "5.0"
+        ],
+        "sources": [
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          }
+        ],
+        "intent": null,
+        "analysis_source": null,
+        "analysis_error": null,
+        "filter": null,
+        "confidence": "none"
+      },
+      "temporal": {
+        "answer": "The company has consistently provided **12 weeks of paid parental leave** for full‑time employees throughout all policy versions that were in force before 2024.  \n\n- In the v1.0 policy (valid 2021‑04‑01 → 2022‑03‑01) the entitlement is 12 weeks [Source 2].  \n- In the v2.0 policy (valid 2022‑03‑01 → 2023‑01‑01) the entitlement remains 12 weeks [Source 1].  \n- In the v3.0 policy (valid 2023‑01‑01 → 2024‑02‑01) it is still 12 weeks [Source 3].\n\nThus, up to 31 December 2023, the paid parental leave offered was 12 weeks.",
+        "correct": true,
+        "keyword_correct": true,
+        "grading": "judge",
+        "judge_reason": "Candidate matches the reference answer of 12 weeks",
+        "error": null,
+        "latency_ms": 27217,
+        "used_versions": [
+          "1.0",
+          "2.0",
+          "3.0"
+        ],
+        "sources": [
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          }
+        ],
+        "intent": "range",
+        "analysis_source": "llm",
+        "analysis_error": null,
+        "filter": {
+          "rule": "valid at any time up to 2023-12-31",
+          "scoring": "relevance only",
+          "candidates_retrieved": 30,
+          "candidates_valid": 18,
+          "candidates_kept": 18
+        },
+        "confidence": "high"
+      }
+    },
+    {
+      "id": "Q18",
+      "type": "historical",
+      "question": "What was the notice period for resignation during 2023?",
+      "answer": "45 days.",
+      "supporting_versions": [
+        "3.0"
+      ],
+      "temporal": {
+        "answer": "During 2023, Northwind Technologies required that, after the six‑month probation period, either the employee or the company give **45 days of written notice** to end the employment relationship. This notice period could not be waived unless a written agreement was obtained from HR 【SOURCE 1】.",
+        "correct": true,
+        "keyword_correct": true,
+        "grading": "judge",
+        "judge_reason": "Candidate correctly states the notice period as 45 days, matching the reference answer.",
+        "error": null,
+        "latency_ms": 12369,
+        "used_versions": [
+          "3.0"
+        ],
+        "sources": [
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          }
+        ],
+        "intent": "range",
+        "analysis_source": "llm",
+        "analysis_error": null,
+        "filter": {
+          "rule": "valid at any time from 2023-01-01 to 2023-12-31",
+          "scoring": "relevance only",
+          "candidates_retrieved": 30,
+          "candidates_valid": 6,
+          "candidates_kept": 6
+        },
+        "confidence": "none"
+      },
+      "normal": {
+        "answer": "I’m sorry, but the provided documents do not specify which notice‑period provision was in effect during 2023, so I cannot determine the exact notice period for resignation for that year.",
+        "correct": false,
+        "keyword_correct": false,
+        "grading": "judge",
+        "judge_reason": "Candidate does not state the 45‑day notice period required in 2023",
+        "error": null,
+        "latency_ms": 11131,
+        "used_versions": [
+          "1.0",
+          "2.0",
+          "3.0",
+          "4.0",
+          "5.0"
+        ],
+        "sources": [
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          }
+        ],
+        "intent": null,
+        "analysis_source": null,
+        "analysis_error": null,
+        "filter": null,
+        "confidence": "none"
+      }
+    },
+    {
+      "id": "Q19",
+      "type": "historical",
+      "question": "What was the manager travel approval limit before it was last increased?",
+      "answer": "INR 40,000 per trip.",
+      "supporting_versions": [
+        "3.0",
+        "4.0"
+      ],
+      "normal": {
+        "answer": "The most recent version of the policy allows managers to approve travel expenses up to **INR 60,000 per trip**【SOURCE 5】.  \nIn the earlier version of the policy, the manager‑approval ceiling was **INR 40,000 per trip**【SOURCE 1】.  \n\nTherefore, before the last increase, the manager travel approval limit was INR 40,000 per trip.",
+        "correct": true,
+        "keyword_correct": true,
+        "grading": "judge",
+        "judge_reason": "Candidate correctly states the prior limit as INR 40,000 per trip, matching the reference.",
+        "error": null,
+        "latency_ms": 12584,
+        "used_versions": [
+          "1.0",
+          "2.0",
+          "3.0",
+          "4.0",
+          "5.0"
+        ],
+        "sources": [
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          }
+        ],
+        "intent": null,
+        "analysis_source": null,
+        "analysis_error": null,
+        "filter": null,
+        "confidence": "none"
+      },
+      "temporal": {
+        "answer": "The most recent increase raised the manager‑approved travel limit to **INR 60,000 per trip** in the v5.0 policy (effective 2025‑03‑01) [Source 5].  \nBefore that increase, the limit was **INR 40,000 per trip** – the amount set in v3.0 (2023‑01‑01 → 2024‑02‑01) and carried forward in v4.0 (2024‑02‑01 → 2025‑03‑01) [Source 1][Source 3].  \n\nSo, prior to the last increase, the manager travel approval limit was INR 40,000 per trip.",
+        "correct": true,
+        "keyword_correct": true,
+        "grading": "judge",
+        "judge_reason": "Candidate correctly states the prior limit as INR 40,000 per trip, matching the reference.",
+        "error": null,
+        "latency_ms": 31229,
+        "used_versions": [
+          "1.0",
+          "2.0",
+          "3.0",
+          "4.0",
+          "5.0"
+        ],
+        "sources": [
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": false
+          },
+          {
+            "version": "4.0",
+            "used": false
+          },
+          {
+            "version": "2.0",
+            "used": false
+          },
+          {
+            "version": "1.0",
+            "used": false
+          }
+        ],
+        "intent": "historical",
+        "analysis_source": "llm",
+        "analysis_error": null,
+        "filter": {
+          "rule": "all versions (no time filter)",
+          "scoring": "relevance only",
+          "candidates_retrieved": 30,
+          "candidates_valid": 30,
+          "candidates_kept": 20
+        },
+        "confidence": "high"
+      }
+    },
+    {
+      "id": "Q20",
+      "type": "conflict",
+      "question": "What changed about remote work between the 2024 policy and the 2025 policy?",
+      "answer": "The remote work allowance was reduced from 3 days per week to 2 days per week.",
+      "supporting_versions": [
+        "4.0",
+        "5.0"
+      ],
+      "temporal": {
+        "answer": "**Change in remote‑work allowance**\n\n| Policy version | Validity period | Remote‑work provision |\n|----------------|----------------|-----------------------|\n| **v4.0** (2024 policy) | 2024‑02‑01 → 2025‑03‑01 | Employees may work remotely **up to 3 days per week**, with prior manager approval and advance scheduling on the HR portal. [SOURCE 1] |\n| **v5.0** (2025 policy) | from 2025‑03‑01 | Employees may work remotely **up to 2 days per week**, still requiring prior manager approval and advance agreement. [SOURCE 2] |\n\n**What changed**\n\n- The maximum number of remote work days per week was reduced from **three days** (v4.0) to **two days** (v5.0).  \n- All other aspects (manager approval, advance agreement, office‑presence expectation for the remaining days) remained the same.\n\n**When the change took effect**\n\n- The reduction took effect on **2025‑03‑01**, when the v5.0 policy replaced the v4.0 policy. Prior to that, from **2024‑02‑01** through **2025‑02‑28**, the 3‑day‑per‑week allowance applied.",
+        "correct": true,
+        "keyword_correct": true,
+        "grading": "judge",
+        "judge_reason": "Candidate correctly states the allowance changed from 3 days per week to 2 days per week",
+        "error": null,
+        "latency_ms": 30186,
+        "used_versions": [
+          "3.0",
+          "4.0",
+          "5.0"
+        ],
+        "sources": [
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          }
+        ],
+        "intent": "range",
+        "analysis_source": "llm",
+        "analysis_error": null,
+        "filter": {
+          "rule": "valid at any time from 2024-01-01 to 2025-12-31",
+          "scoring": "relevance only",
+          "candidates_retrieved": 30,
+          "candidates_valid": 18,
+          "candidates_kept": 18
+        },
+        "confidence": "high"
+      },
+      "normal": {
+        "answer": "The remote‑work allowance was expanded. In the earlier version of the policy employees could work remotely only **one day per week** [Source 1]. The later version increased that limit to **up to three days per week**, still requiring prior manager approval and with remote days not carried over to the next week [Source 5].",
+        "correct": false,
+        "keyword_correct": false,
+        "grading": "judge",
+        "judge_reason": "Candidate answer gives opposite changes and different day counts, not matching the reference reduction from 3 to 2 days",
+        "error": null,
+        "latency_ms": 13645,
+        "used_versions": [
+          "1.0",
+          "2.0",
+          "3.0",
+          "4.0",
+          "5.0"
+        ],
+        "sources": [
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          }
+        ],
+        "intent": null,
+        "analysis_source": null,
+        "analysis_error": null,
+        "filter": null,
+        "confidence": "none"
+      }
+    },
+    {
+      "id": "Q21",
+      "type": "conflict",
+      "question": "How has the notice period for resignation changed over time?",
+      "answer": "It was 60 days originally, was reduced to 45 days, and is now 30 days.",
+      "supporting_versions": [
+        "1.0",
+        "2.0",
+        "3.0",
+        "4.0",
+        "5.0"
+      ],
+      "normal": {
+        "answer": "The policy’s required notice period has not remained constant. Earlier versions of the employee policy required a **60‑day written notice** from either the employee or the company after the probation period [Source 1][Source 3]. In later revisions the required notice was reduced to **45 days** [Source 2][Source 4]. The most recent version of the policy lists a **30‑day written notice** as the requirement [Source 5].  \n\nThese successive changes show that the resignation notice period has been shortened over time—from 60 days, to 45 days, and then to 30 days.",
+        "correct": true,
+        "keyword_correct": true,
+        "grading": "judge",
+        "judge_reason": "Candidate correctly states the sequence 60 days → 45 days → 30 days",
+        "error": null,
+        "latency_ms": 9390,
+        "used_versions": [
+          "1.0",
+          "2.0",
+          "3.0",
+          "4.0",
+          "5.0"
+        ],
+        "sources": [
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          }
+        ],
+        "intent": null,
+        "analysis_source": null,
+        "analysis_error": null,
+        "filter": null,
+        "confidence": "none"
+      },
+      "temporal": {
+        "answer": "**Notice‑period evolution in the Northwind Technologies Employee Policy**\n\n| Validity period (policy version) | Required written notice after probation* |\n|----------------------------------|-------------------------------------------|\n| **v1.0** – 2021‑04‑01 → 2022‑03‑01 | 60 days [Source 1] |\n| **v2.0** – 2022‑03‑01 → 2023‑01‑01 | 60 days [Source 4] |\n| **v3.0** – 2023‑01‑01 → 2024‑02‑01 | 45 days [Source 2] |\n| **v4.0** – 2024‑02‑01 → 2025‑03‑01 | 45 days [Source 3] |\n| **v5.0** – from 2025‑03‑01 onward | 30 days [Source 5] |\n\n\\*The notice period applies to either the employee or the company after the 6‑month probation period and cannot be waived without a written agreement from HR (stated in all versions).\n\n**Summary of changes**\n\n1. **2021‑04‑01 to 2023‑01‑01** – The policy required a **60‑day** written notice.  \n2. **2023‑01‑01 to 2025‑03‑01** – The required notice was **reduced to 45 days**.  \n3. **From 2025‑03‑01 onward** – The notice period was **further reduced to 30 days**.\n\nThus, over time the resignation notice period has been progressively shortened: 60 days → 45 days → 30 days.",
+        "correct": true,
+        "keyword_correct": true,
+        "grading": "judge",
+        "judge_reason": "Candidate correctly states the notice period changed from 60 days to 45 days to 30 days, matching the reference.",
+        "error": null,
+        "latency_ms": 29343,
+        "used_versions": [
+          "1.0",
+          "2.0",
+          "3.0",
+          "4.0",
+          "5.0"
+        ],
+        "sources": [
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": false
+          },
+          {
+            "version": "1.0",
+            "used": false
+          },
+          {
+            "version": "4.0",
+            "used": false
+          },
+          {
+            "version": "3.0",
+            "used": false
+          },
+          {
+            "version": "1.0",
+            "used": false
+          },
+          {
+            "version": "3.0",
+            "used": false
+          },
+          {
+            "version": "2.0",
+            "used": false
+          },
+          {
+            "version": "4.0",
+            "used": false
+          },
+          {
+            "version": "5.0",
+            "used": false
+          },
+          {
+            "version": "3.0",
+            "used": false
+          },
+          {
+            "version": "1.0",
+            "used": false
+          }
+        ],
+        "intent": "historical",
+        "analysis_source": "llm",
+        "analysis_error": null,
+        "filter": {
+          "rule": "all versions (no time filter)",
+          "scoring": "relevance only",
+          "candidates_retrieved": 30,
+          "candidates_valid": 30,
+          "candidates_kept": 20
+        },
+        "confidence": "high"
+      }
+    },
+    {
+      "id": "Q22",
+      "type": "conflict",
+      "question": "Did the annual leave entitlement increase in 2024, and by how much?",
+      "answer": "Yes. It increased from 20 days to 24 days per year, an increase of 4 days.",
+      "supporting_versions": [
+        "3.0",
+        "4.0"
+      ],
+      "temporal": {
+        "answer": "Yes. Northwind Technologies raised its paid‑annual‑leave entitlement in 2024.\n\n* Under the policy that was in force from 1 January 2023 through 1 February 2024 (v3.0), full‑time employees received **20 days** of paid annual leave per calendar year [Source 1].\n* Starting 1 February 2024, the updated policy (v4.0) increased that entitlement to **24 days** per calendar year [Source 2].\n\nThus, the annual leave entitlement increased by **4 days** (from 20 days to 24 days) beginning 1 February 2024.",
+        "correct": true,
+        "keyword_correct": true,
+        "grading": "judge",
+        "judge_reason": "Candidate matches reference on increase from 20 to 24 days, a 4‑day increase",
+        "error": null,
+        "latency_ms": 12299,
+        "used_versions": [
+          "3.0",
+          "4.0"
+        ],
+        "sources": [
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          }
+        ],
+        "intent": "range",
+        "analysis_source": "llm",
+        "analysis_error": null,
+        "filter": {
+          "rule": "valid at any time from 2024-01-01 to 2024-12-31",
+          "scoring": "relevance only",
+          "candidates_retrieved": 30,
+          "candidates_valid": 12,
+          "candidates_kept": 12
+        },
+        "confidence": "none"
+      },
+      "normal": {
+        "answer": "I’m sorry, but the provided documents do not contain any information about a change to the annual‑leave entitlement in 2024, nor do they specify when the different entitlement levels (e.g., 18 days, 20 days, 24 days) were in effect. Therefore I cannot determine whether the entitlement increased in 2024 or by how much.",
+        "correct": false,
+        "keyword_correct": true,
+        "grading": "judge",
+        "judge_reason": "Candidate claims no information and cannot determine, contradicting the reference that states a 4‑day increase",
+        "error": null,
+        "latency_ms": 12099,
+        "used_versions": [
+          "1.0",
+          "2.0",
+          "3.0",
+          "4.0",
+          "5.0"
+        ],
+        "sources": [
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          }
+        ],
+        "intent": null,
+        "analysis_source": null,
+        "analysis_error": null,
+        "filter": null,
+        "confidence": "none"
+      }
+    },
+    {
+      "id": "Q23",
+      "type": "conflict",
+      "question": "What was the notice period before it was reduced to 30 days?",
+      "answer": "45 days.",
+      "supporting_versions": [
+        "3.0",
+        "4.0",
+        "5.0"
+      ],
+      "normal": {
+        "answer": "Before the notice period was reduced to 30 days, it was 60 days [Source 1] .",
+        "correct": false,
+        "keyword_correct": false,
+        "grading": "judge",
+        "judge_reason": "Candidate answer states 60 days, which does not match the reference answer of 45 days",
+        "error": null,
+        "latency_ms": 12183,
+        "used_versions": [
+          "1.0",
+          "2.0",
+          "3.0",
+          "4.0",
+          "5.0"
+        ],
+        "sources": [
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          }
+        ],
+        "intent": null,
+        "analysis_source": null,
+        "analysis_error": null,
+        "filter": null,
+        "confidence": "none"
+      },
+      "temporal": {
+        "answer": "Before the policy was changed to require **30 days** notice (Northwind Technologies Employee Policy v5.0, effective 2025‑03‑01) [Source 2], the notice period had been **45 days**.  \n\n* **v3.0** (valid 2023‑01‑01 → 2024‑02‑01) stipulated a 45‑day written notice after probation [Source 4].  \n* **v4.0** (valid 2024‑02‑01 → 2025‑03‑01) kept the same 45‑day notice requirement [Source 5].\n\nEarlier versions of the policy used a longer notice period:  \n\n* **v1.0** (valid 2021‑04‑01 → 2022‑03‑01) required 60 days notice [Source 1].  \n* **v2.0** (valid 2022‑03‑01 → 2023‑01‑01) also required 60 days notice [Source 3].\n\nSo, immediately before the reduction to 30 days, the notice period was **45 days** (in v3.0 and v4.0).",
+        "correct": true,
+        "keyword_correct": true,
+        "grading": "judge",
+        "judge_reason": "Candidate correctly states the notice period was 45 days, matching the reference answer.",
+        "error": null,
+        "latency_ms": 32727,
+        "used_versions": [
+          "1.0",
+          "2.0",
+          "3.0",
+          "4.0",
+          "5.0"
+        ],
+        "sources": [
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": false
+          },
+          {
+            "version": "4.0",
+            "used": false
+          },
+          {
+            "version": "2.0",
+            "used": false
+          },
+          {
+            "version": "5.0",
+            "used": false
+          },
+          {
+            "version": "4.0",
+            "used": false
+          },
+          {
+            "version": "5.0",
+            "used": false
+          },
+          {
+            "version": "4.0",
+            "used": false
+          }
+        ],
+        "intent": "historical",
+        "analysis_source": "llm",
+        "analysis_error": null,
+        "filter": {
+          "rule": "all versions (no time filter)",
+          "scoring": "relevance only",
+          "candidates_retrieved": 30,
+          "candidates_valid": 30,
+          "candidates_kept": 20
+        },
+        "confidence": "high"
+      }
+    },
+    {
+      "id": "Q24",
+      "type": "conflict",
+      "question": "Compare the paid parental leave in the first policy with the current policy.",
+      "answer": "The first policy gave 12 weeks; the current policy gives 26 weeks.",
+      "supporting_versions": [
+        "1.0",
+        "5.0"
+      ],
+      "temporal": {
+        "answer": "The sources you provided all describe the same Northwind Technologies Employee Policy (v5.0, valid from 2025‑03‑01). They state that the policy “provides 26 weeks of paid parental leave… which may be taken in more than one block within the first year” [Source 1].\n\nNo earlier version of the policy (a “first policy”) is included in the supplied documents, so there is no information available to compare the parental‑leave entitlement of an earlier policy with the current one. Consequently, a comparison cannot be made based on the provided sources.",
+        "correct": false,
+        "keyword_correct": false,
+        "grading": "judge",
+        "judge_reason": "Candidate fails to state the first policy gave 12 weeks and the current policy gives 26 weeks as required",
+        "error": null,
+        "latency_ms": 12745,
+        "used_versions": [
+          "5.0"
+        ],
+        "sources": [
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          }
+        ],
+        "intent": "current",
+        "analysis_source": "default",
+        "analysis_error": "LLM output failed validation: Value error, version intent requires a version containing a digit",
+        "filter": {
+          "rule": "valid today (2026-09-19)",
+          "scoring": "relevance + recency",
+          "candidates_retrieved": 30,
+          "candidates_valid": 6,
+          "candidates_kept": 6
+        },
+        "confidence": "none"
+      },
+      "normal": {
+        "answer": "The original (first) version of the policy granted a very generous parental‑leave entitlement – 26 weeks of paid leave, which could be taken by any parent (including adoptive parents) and split into multiple blocks during the first year [ SOURCE 1 ].  \n\nThe most recent version of the policy reduces that entitlement. Under the current policy, paid parental leave is 16 weeks, also available to all parents (including adoptive parents) [ SOURCE 4 ].  \n\nSo, compared with the first policy’s 26 weeks, the current policy provides 10 weeks less paid parental leave.",
+        "correct": false,
+        "keyword_correct": false,
+        "grading": "judge",
+        "judge_reason": "Candidate gives different weeks (26 and 16) than reference (12 and 26)",
+        "error": null,
+        "latency_ms": 10752,
+        "used_versions": [
+          "1.0",
+          "2.0",
+          "3.0",
+          "4.0",
+          "5.0"
+        ],
+        "sources": [
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          }
+        ],
+        "intent": null,
+        "analysis_source": null,
+        "analysis_error": null,
+        "filter": null,
+        "confidence": "none"
+      }
+    },
+    {
+      "id": "Q25",
+      "type": "conflict",
+      "question": "Is the current remote work allowance higher or lower than it was in 2023?",
+      "answer": "Lower. It was 3 days per week in 2023 and is 2 days per week now.",
+      "supporting_versions": [
+        "3.0",
+        "5.0"
+      ],
+      "normal": {
+        "answer": "I’m sorry, but the provided documents do not contain any information about how the remote‑work allowance has changed over time or what the allowance was in 2023. Therefore I cannot determine whether the current allowance is higher or lower than it was in 2023.",
+        "correct": false,
+        "keyword_correct": false,
+        "grading": "judge",
+        "judge_reason": "Candidate claims no information, contradicting the reference that states the allowance is lower now",
+        "error": null,
+        "latency_ms": 10960,
+        "used_versions": [
+          "1.0",
+          "2.0",
+          "3.0",
+          "4.0",
+          "5.0"
+        ],
+        "sources": [
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          }
+        ],
+        "intent": null,
+        "analysis_source": null,
+        "analysis_error": null,
+        "filter": null,
+        "confidence": "none"
+      },
+      "temporal": {
+        "answer": "The sources you provided describe the remote‑work policy that is in force from 1 March 2025 onward – employees may work remotely up to 2 days per week with manager approval [Source 1]. None of the supplied documents contain any information about the remote‑work allowance that was in effect in 2023. Because there is no source covering the 2023 policy, I cannot determine whether the current allowance is higher or lower than it was then.",
+        "correct": false,
+        "keyword_correct": false,
+        "grading": "judge",
+        "judge_reason": "Candidate does not state that the allowance is lower, claiming insufficient information instead of matching reference.",
+        "error": null,
+        "latency_ms": 15885,
+        "used_versions": [
+          "5.0"
+        ],
+        "sources": [
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          }
+        ],
+        "intent": "current",
+        "analysis_source": "llm",
+        "analysis_error": null,
+        "filter": {
+          "rule": "valid today (2026-09-19)",
+          "scoring": "relevance + recency",
+          "candidates_retrieved": 30,
+          "candidates_valid": 6,
+          "candidates_kept": 6
+        },
+        "confidence": "none"
+      }
+    },
+    {
+      "id": "Q26",
+      "type": "stable",
+      "question": "In which city is the Northwind head office located?",
+      "answer": "Pune.",
+      "supporting_versions": [
+        "1.0",
+        "2.0",
+        "3.0",
+        "4.0",
+        "5.0"
+      ],
+      "temporal": {
+        "answer": "Northwind Technologies’ head office is located in Pune [Source 1].",
+        "correct": true,
+        "keyword_correct": true,
+        "grading": "judge",
+        "judge_reason": "Candidate correctly states the head office is in Pune",
+        "error": null,
+        "latency_ms": 10426,
+        "used_versions": [
+          "5.0"
+        ],
+        "sources": [
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          }
+        ],
+        "intent": "current",
+        "analysis_source": "llm",
+        "analysis_error": null,
+        "filter": {
+          "rule": "valid today (2026-09-19)",
+          "scoring": "relevance + recency",
+          "candidates_retrieved": 30,
+          "candidates_valid": 6,
+          "candidates_kept": 6
+        },
+        "confidence": "none"
+      },
+      "normal": {
+        "answer": "Northwind Technologies’ head office is located in Pune [Source 1].",
+        "correct": true,
+        "keyword_correct": true,
+        "grading": "judge",
+        "judge_reason": "Candidate correctly states the head office is in Pune",
+        "error": null,
+        "latency_ms": 12628,
+        "used_versions": [
+          "1.0",
+          "2.0",
+          "3.0",
+          "4.0",
+          "5.0"
+        ],
+        "sources": [
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          }
+        ],
+        "intent": null,
+        "analysis_source": null,
+        "analysis_error": null,
+        "filter": null,
+        "confidence": "none"
+      }
+    },
+    {
+      "id": "Q27",
+      "type": "stable",
+      "question": "How long is the probation period for new employees?",
+      "answer": "6 months.",
+      "supporting_versions": [
+        "1.0",
+        "2.0",
+        "3.0",
+        "4.0",
+        "5.0"
+      ],
+      "normal": {
+        "answer": "All new employees serve a probation period of six months [ SOURCE 1 ].",
+        "correct": true,
+        "keyword_correct": true,
+        "grading": "judge",
+        "judge_reason": "Candidate correctly states the probation period as six months, matching the reference answer.",
+        "error": null,
+        "latency_ms": 11942,
+        "used_versions": [
+          "1.0",
+          "2.0",
+          "3.0",
+          "4.0",
+          "5.0"
+        ],
+        "sources": [
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          }
+        ],
+        "intent": null,
+        "analysis_source": null,
+        "analysis_error": null,
+        "filter": null,
+        "confidence": "none"
+      },
+      "temporal": {
+        "answer": "New employees must complete a **6‑month probation period** before their employment becomes permanent [Source 1].",
+        "correct": true,
+        "keyword_correct": true,
+        "grading": "judge",
+        "judge_reason": "Candidate correctly states the probation period as 6 months",
+        "error": null,
+        "latency_ms": 8673,
+        "used_versions": [
+          "5.0"
+        ],
+        "sources": [
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          }
+        ],
+        "intent": "current",
+        "analysis_source": "llm",
+        "analysis_error": null,
+        "filter": {
+          "rule": "valid today (2026-09-19)",
+          "scoring": "relevance + recency",
+          "candidates_retrieved": 30,
+          "candidates_valid": 6,
+          "candidates_kept": 6
+        },
+        "confidence": "none"
+      }
+    },
+    {
+      "id": "Q28",
+      "type": "stable",
+      "question": "What are the standard working hours?",
+      "answer": "9:30 AM to 6:00 PM, Monday to Friday.",
+      "supporting_versions": [
+        "1.0",
+        "2.0",
+        "3.0",
+        "4.0",
+        "5.0"
+      ],
+      "temporal": {
+        "answer": "The standard working hours are 9:30 AM to 6:00 PM, Monday through Friday 【SOURCE 1】.",
+        "correct": true,
+        "keyword_correct": true,
+        "grading": "judge",
+        "judge_reason": "Candidate answer matches the reference working hours exactly",
+        "error": null,
+        "latency_ms": 6696,
+        "used_versions": [
+          "5.0"
+        ],
+        "sources": [
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          }
+        ],
+        "intent": "current",
+        "analysis_source": "llm",
+        "analysis_error": null,
+        "filter": {
+          "rule": "valid today (2026-09-19)",
+          "scoring": "relevance + recency",
+          "candidates_retrieved": 30,
+          "candidates_valid": 6,
+          "candidates_kept": 6
+        },
+        "confidence": "none"
+      },
+      "normal": {
+        "answer": "The standard working hours are 9:30 AM to 6:00 PM, Monday through Friday [Source 1].",
+        "correct": true,
+        "keyword_correct": true,
+        "grading": "judge",
+        "judge_reason": "Candidate answer matches the reference working hours exactly",
+        "error": null,
+        "latency_ms": 14938,
+        "used_versions": [
+          "1.0",
+          "2.0",
+          "3.0",
+          "4.0",
+          "5.0"
+        ],
+        "sources": [
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          }
+        ],
+        "intent": null,
+        "analysis_source": null,
+        "analysis_error": null,
+        "filter": null,
+        "confidence": "none"
+      }
+    },
+    {
+      "id": "Q29",
+      "type": "stable",
+      "question": "How many public holidays do employees receive each year?",
+      "answer": "12 public holidays.",
+      "supporting_versions": [
+        "1.0",
+        "2.0",
+        "3.0",
+        "4.0",
+        "5.0"
+      ],
+      "normal": {
+        "answer": "Employees receive 12 public holidays each year [Source 1].",
+        "correct": true,
+        "keyword_correct": true,
+        "grading": "judge",
+        "judge_reason": "Candidate matches the reference answer of 12 public holidays",
+        "error": null,
+        "latency_ms": 11168,
+        "used_versions": [
+          "1.0",
+          "2.0",
+          "3.0",
+          "4.0",
+          "5.0"
+        ],
+        "sources": [
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          }
+        ],
+        "intent": null,
+        "analysis_source": null,
+        "analysis_error": null,
+        "filter": null,
+        "confidence": "none"
+      },
+      "temporal": {
+        "answer": "Employees receive **12 public holidays each year** [Source 1].",
+        "correct": true,
+        "keyword_correct": true,
+        "grading": "judge",
+        "judge_reason": "Candidate matches the reference answer of 12 public holidays",
+        "error": null,
+        "latency_ms": 11770,
+        "used_versions": [
+          "5.0"
+        ],
+        "sources": [
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          }
+        ],
+        "intent": "current",
+        "analysis_source": "llm",
+        "analysis_error": null,
+        "filter": {
+          "rule": "valid today (2026-09-19)",
+          "scoring": "relevance + recency",
+          "candidates_retrieved": 30,
+          "candidates_valid": 6,
+          "candidates_kept": 6
+        },
+        "confidence": "none"
+      }
+    },
+    {
+      "id": "Q30",
+      "type": "stable",
+      "question": "When is salary paid each month?",
+      "answer": "On the last working day of each month.",
+      "supporting_versions": [
+        "1.0",
+        "2.0",
+        "3.0",
+        "4.0",
+        "5.0"
+      ],
+      "temporal": {
+        "answer": "Salary is paid on the last working day of each month by bank transfer [Source 1].",
+        "correct": true,
+        "keyword_correct": true,
+        "grading": "judge",
+        "judge_reason": "Candidate matches the reference answer exactly",
+        "error": null,
+        "latency_ms": 13106,
+        "used_versions": [
+          "5.0"
+        ],
+        "sources": [
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          }
+        ],
+        "intent": "current",
+        "analysis_source": "llm",
+        "analysis_error": null,
+        "filter": {
+          "rule": "valid today (2026-09-19)",
+          "scoring": "relevance + recency",
+          "candidates_retrieved": 30,
+          "candidates_valid": 6,
+          "candidates_kept": 6
+        },
+        "confidence": "none"
+      },
+      "normal": {
+        "answer": "Salary is paid on the last working day of each month by bank transfer [Source 1].",
+        "correct": true,
+        "keyword_correct": true,
+        "grading": "judge",
+        "judge_reason": "Candidate matches the reference answer exactly",
+        "error": null,
+        "latency_ms": 14098,
+        "used_versions": [
+          "1.0",
+          "2.0",
+          "3.0",
+          "4.0",
+          "5.0"
+        ],
+        "sources": [
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "5.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "1.0",
+            "used": true
+          },
+          {
+            "version": "2.0",
+            "used": true
+          },
+          {
+            "version": "3.0",
+            "used": true
+          },
+          {
+            "version": "4.0",
+            "used": true
+          }
+        ],
+        "intent": null,
+        "analysis_source": null,
+        "analysis_error": null,
+        "filter": null,
+        "confidence": "none"
+      }
+    }
+  ]
+}

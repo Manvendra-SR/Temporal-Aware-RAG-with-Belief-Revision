@@ -36,19 +36,19 @@ interface ConflictsResponse {
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-// The detector only ever emits these two types (see services/conflict_detector
-// _classify). "scope_change" was offered as a filter option but nothing could
+// The detector only ever emits these two types, decided by version lineage
+// (see services/conflict_detector _classify). "scope_change" was offered as a filter option but nothing could
 // ever produce it, so the filter silently returned an empty list.
 const CONFLICT_TYPES = [
   {
     value: 'version_supersession',
-    label: 'Newer version disagrees',
-    help: 'The sources contradict each other and are far enough apart in time that one clearly supersedes the other.',
+    label: 'Changed between versions',
+    help: 'Both passages come from versions of the same document, so the disagreement is the document changing over time. Each is correct for its own validity period.',
   },
   {
     value: 'direct_contradiction',
     label: 'Direct contradiction',
-    help: 'The sources make conflicting claims without a clear time ordering between them.',
+    help: 'Two unrelated documents make conflicting claims. For current questions the clearly newer one (published more than 90 days later) is preferred; otherwise both are shown.',
   },
 ] as const
 

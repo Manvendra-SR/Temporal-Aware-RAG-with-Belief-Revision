@@ -6,12 +6,29 @@ resolve(parent_doc_id, new_doc_id, new_version, new_date, db) → LineageResult
 Algorithm:
     1. If parent_doc_id is None → new lineage, mark new doc is_latest=True, done.
     2. Load parent from DB. If not found → raise ValueError (caller returns 422).
-    3. Guard: new_version must be strictly greater than parent.version_string.
+    3. Guards (each raises ValueError):
+         - the parent must be the latest version of its lineage
+         - new_version must be strictly greater than parent.version_string
+         - new_date must not be earlier than the parent's published_at
     4. Walk the lineage from parent upward to mark ALL ancestors is_latest=False.
     5. Stamp all active (non-superseded) chunks of older docs:
          valid_to = new_date, is_superseded = True
     6. Set new doc is_latest=True, parent_doc_id = parent.doc_id.
     7. Return LineageResult.
+
+Why the guards matter
+---------------------
+Query-time temporal filtering reads each chunk's validity window
+[valid_from, valid_to). Those windows are only meaningful if a lineage is a
+single chain whose versions follow each other in time: then exactly one version
+of a lineage is valid on any given day. Branching from an older version would
+leave two "latest" documents, and a version dated before its parent would give
+the parent a window that ends before it starts.
+
+lineage_roots(db, doc_ids) → {doc_id: root_doc_id}
+    Identifies which lineage each document belongs to. The conflict detector
+    uses it to tell a genuine version supersession (same lineage) from a
+    contradiction between unrelated documents.
 """
 
 from __future__ import annotations
@@ -19,8 +36,8 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
-from datetime import datetime
-from typing import Optional
+from datetime import datetime, timezone
+from typing import Iterable, Optional
 
 from sqlalchemy.orm import Session
 
@@ -160,6 +177,14 @@ def resolve(
     if parent is None:
         raise ValueError(f"parent_doc_id '{parent_doc_id}' not found in the database.")
 
+    # Chain guard — a lineage must stay linear (see "Why the guards matter").
+    if not parent.is_latest:
+        raise ValueError(
+            f"Document '{parent.title}' v{parent.version_string} is not the latest "
+            f"version of its lineage. Upload the new version as a child of the "
+            f"latest version instead."
+        )
+
     # Version ordering guard — reject if new version is not strictly greater.
     # Uses the shared ordering policy so "2.2" is correctly rejected against a
     # "2.2.0" parent (they are equal) and "2.10" is correctly accepted over "2.9".
@@ -167,6 +192,15 @@ def resolve(
         raise ValueError(
             f"New version '{new_version}' must be strictly greater than "
             f"the parent version '{parent.version_string}'."
+        )
+
+    # Date ordering guard — the parent's validity window ends at new_date, so
+    # new_date before the parent's own start would make that window empty.
+    if parent.published_at is not None and _as_utc(new_date) < _as_utc(parent.published_at):
+        raise ValueError(
+            f"New version's publication date {new_date.date().isoformat()} is "
+            f"earlier than the parent version's "
+            f"({parent.published_at.date().isoformat()})."
         )
 
     log.info(
@@ -231,3 +265,41 @@ def resolve(
         is_new_lineage=False,
         lineage_message=lineage_message,
     )
+
+
+def lineage_roots(db: Session, doc_ids: Iterable[str]) -> dict[str, str]:
+    """
+    Map each document id to the id of the root document of its lineage.
+
+    A document with no parent is its own root. Walks parent links one level
+    per query for all documents at once, so the cost is one query per level of
+    the deepest lineage involved, not one per document.
+    """
+    doc_ids = list(doc_ids)
+    parent_of: dict[str, Optional[str]] = {}
+    pending = set(doc_ids)
+    while pending:
+        rows = (
+            db.query(Document.doc_id, Document.parent_doc_id)
+            .filter(Document.doc_id.in_(pending))
+            .all()
+        )
+        for row in rows:
+            parent_of[row.doc_id] = row.parent_doc_id
+        # Unknown ids are treated as roots rather than looked up forever.
+        for missing in pending - {row.doc_id for row in rows}:
+            parent_of[missing] = None
+        pending = {p for p in parent_of.values() if p and p not in parent_of}
+
+    roots: dict[str, str] = {}
+    for doc_id in doc_ids:
+        current, seen = doc_id, set()
+        while parent_of.get(current) and current not in seen:
+            seen.add(current)
+            current = parent_of[current]
+        roots[doc_id] = current
+    return roots
+
+
+def _as_utc(d: datetime) -> datetime:
+    return d if d.tzinfo is not None else d.replace(tzinfo=timezone.utc)

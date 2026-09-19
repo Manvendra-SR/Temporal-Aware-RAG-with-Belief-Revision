@@ -24,7 +24,12 @@ from services.conflict_detector import ConflictResult, detect as detect_conflict
 from services.context import build_context
 from services.query_analyzer import QueryAnalysis, analyze as analyze_query
 from services.retriever import CandidateChunk, hybrid_retrieve
-from services.temporal_reranker import rerank as temporal_rerank
+from services.temporal_reranker import (
+    describe_filter,
+    describe_time_frame,
+    rerank as temporal_rerank,
+    scoring_label,
+)
 
 log = logging.getLogger(__name__)
 
@@ -33,6 +38,13 @@ router = APIRouter(tags=["query"])
 # Token budget for the assembled LLM context. Candidates beyond this are still
 # returned to the client as retrieved sources, but flagged used_in_answer=False.
 CONTEXT_TOKEN_BUDGET = 3000
+
+# The temporal filter can remove most of the retrieved candidates (every
+# superseded version for a "current" question, everything outside the window
+# for a dated one), so the temporal pipeline retrieves this many times
+# max_chunks, filters, and only then truncates to max_chunks. The baseline
+# retrieves exactly max_chunks, as plain RAG would.
+OVERFETCH_FACTOR = 3
 
 # How many top-ranked candidates are scanned for pairwise contradictions.
 # Conflict detection is O(n²) in pair selection before the NLI batch, so this
@@ -77,6 +89,9 @@ class SourceResult(BaseModel):
     # Temporal metadata + scores (null when temporal stages were skipped)
     version_string: Optional[str] = None
     published_at: Optional[str] = None
+    # End of the chunk's validity window (the date a newer version superseded
+    # it); null while the chunk is still current.
+    valid_to: Optional[str] = None
     is_latest: Optional[bool] = None
     is_superseded: bool = False
     temporal_score: Optional[float] = None
@@ -104,9 +119,46 @@ class ConflictInfo(BaseModel):
 
 class QueryAnalysisInfo(BaseModel):
     """How the system interpreted the question, surfaced so the UI can show it."""
+    # "current" | "point_in_time" | "range" | "version" | "historical" | "atemporal"
+    intent: str = "current"
+    as_of: Optional[str] = None           # YYYY-MM-DD, point_in_time only
+    start_date: Optional[str] = None      # YYYY-MM-DD, range only (inclusive)
+    end_date: Optional[str] = None        # YYYY-MM-DD, range only (inclusive)
     version_hint: Optional[str] = None
     temporal_qualifier: bool = False
     wants_historical_sources: bool = False
+    # "llm" = interpreted by the LLM; "default" = LLM unavailable or its output
+    # failed validation, so the question was treated as "current";
+    # "skipped" = baseline mode, where no temporal stage reads the analysis.
+    source: str = "default"
+    error: Optional[str] = None
+
+
+def _iso(d) -> Optional[str]:
+    return d.isoformat() if d else None
+
+
+def _analysis_info(analysis: QueryAnalysis, source: str | None = None) -> QueryAnalysisInfo:
+    return QueryAnalysisInfo(
+        intent=analysis.intent.value,
+        as_of=_iso(analysis.as_of),
+        start_date=_iso(analysis.start_date),
+        end_date=_iso(analysis.end_date),
+        version_hint=analysis.version_hint,
+        temporal_qualifier=analysis.temporal_qualifier,
+        wants_historical_sources=analysis.wants_historical_sources,
+        source=source or analysis.source,
+        error=analysis.error,
+    )
+
+
+class TemporalFilterInfo(BaseModel):
+    """What the temporal filter did, so the UI and evaluation can see it."""
+    rule: str                     # e.g. "valid on 2024-03-31"
+    scoring: str                  # "relevance + recency" | "relevance only"
+    candidates_retrieved: int     # before filtering (over-fetched pool)
+    candidates_valid: int         # passed the filter
+    candidates_kept: int          # after truncation to max_chunks
 
 
 class QueryResponse(BaseModel):
@@ -119,6 +171,8 @@ class QueryResponse(BaseModel):
     analysis: QueryAnalysisInfo = QueryAnalysisInfo()
     # True when the temporal pipeline ran (false for the baseline comparison)
     temporal_pipeline_applied: bool = True
+    # Null in baseline mode
+    temporal_filter: Optional[TemporalFilterInfo] = None
     # How many of `sources` actually fitted into the answer's context
     sources_used_in_answer: int = 0
     # Conflict detection results
@@ -141,12 +195,18 @@ def query_endpoint(
 ) -> QueryResponse:
     """
     Full RAG pipeline:
-        1.  Hybrid retrieve (BM25 + FAISS + RRF)
-        1b. Temporal rerank
-        1c. Conflict detection
-        1d. Belief revision
-        2.  Build context string (token-budgeted, revision-annotated)
+        0.  Temporal query analysis (LLM → validated intent JSON)
+        1.  Hybrid retrieve (BM25 + FAISS + RRF), over-fetching 3× max_chunks
+        1b. Temporal filter (validity window for the intent) + rerank,
+            then truncate to max_chunks
+        1c. Conflict detection (NLI; typed by version lineage)
+        1d. Belief revision (conflict arbitration)
+        2.  Build context string (token-budgeted, validity-annotated)
         3.  Generate answer via Groq (unless retrieve_only=true)
+
+    With no_temporal=true, steps 0, 1b, 1c and 1d are skipped, max_chunks are
+    retrieved, and the context and system prompt carry no version or date
+    information: a genuine plain hybrid-RAG baseline over the same retrieval.
         4.  Log to query_log table
         5.  Return answer + source cards
     """
@@ -154,23 +214,37 @@ def query_endpoint(
     query_id = str(uuid.uuid4())
     temporal_enabled = not req.no_temporal
 
+    # ── 0. Temporal query understanding (one LLM call) ─────────────────────
+    # Baseline mode runs no temporal stage, so it skips the call entirely —
+    # the baseline must not pay for, or be influenced by, temporal analysis.
+    if temporal_enabled:
+        analysis: QueryAnalysis = analyze_query(req.query)
+        analysis_info = _analysis_info(analysis)
+    else:
+        analysis = QueryAnalysis()
+        analysis_info = _analysis_info(analysis, source="skipped")
+
     # ── 1. Retrieve ──────────────────────────────────────────────────────────
     candidates: list[CandidateChunk] = hybrid_retrieve(
         query=req.query,
         db=db,
-        k=req.max_chunks,
+        k=req.max_chunks * OVERFETCH_FACTOR if temporal_enabled else req.max_chunks,
     )
 
-    analysis: QueryAnalysis = analyze_query(req.query)
-    analysis_info = QueryAnalysisInfo(
-        version_hint=analysis.version_hint,
-        temporal_qualifier=analysis.temporal_qualifier,
-        wants_historical_sources=analysis.wants_historical_sources,
-    )
-
-    # ── 1b. Temporal rerank (skipped in baseline mode) ─────────────────────
-    if candidates and temporal_enabled:
+    # ── 1b. Temporal filter + rerank, then truncate (skipped in baseline) ────
+    temporal_filter: Optional[TemporalFilterInfo] = None
+    if temporal_enabled:
+        retrieved = len(candidates)
         candidates = temporal_rerank(candidates, analysis)
+        valid = len(candidates)
+        candidates = candidates[: req.max_chunks]
+        temporal_filter = TemporalFilterInfo(
+            rule=describe_filter(analysis, datetime.now(timezone.utc).date()),
+            scoring=scoring_label(analysis),
+            candidates_retrieved=retrieved,
+            candidates_valid=valid,
+            candidates_kept=len(candidates),
+        )
 
     if not candidates:
         latency_ms = int((time.monotonic() - t_start) * 1000)
@@ -183,6 +257,7 @@ def query_endpoint(
             version_hint=analysis.version_hint,
             analysis=analysis_info,
             temporal_pipeline_applied=temporal_enabled,
+            temporal_filter=temporal_filter,
         )
 
     # ── 1c. Conflict detection (skipped in baseline mode) ────────────────────
@@ -202,15 +277,20 @@ def query_endpoint(
     # rather than branching around it.
     revision: RevisionResult = belief_revise(candidates, conflicts, db, analysis)
 
-    # Use revision-filtered chunk list for context building
+    # Excluded chunks never reach the context. (There is no "fall back to all
+    # candidates" here: revision always keeps the preferred side of every
+    # conflict, so it cannot empty the list, and such a fallback would quietly
+    # re-admit exactly the chunks it had excluded.)
     revision_chunk_ids = set(revision.include_chunks)
-    context_chunks = [
-        c for c in candidates if c.chunk_id in revision_chunk_ids
-    ] or candidates  # fallback to all if revision produces empty list
+    context_chunks = [c for c in candidates if c.chunk_id in revision_chunk_ids]
 
     # ── 2. Build context ─────────────────────────────────────────────────────
     context, used_chunk_ids = build_context(
-        context_chunks, budget=CONTEXT_TOKEN_BUDGET, revision_result=revision
+        context_chunks,
+        budget=CONTEXT_TOKEN_BUDGET,
+        revision_result=revision if temporal_enabled else None,
+        temporal_annotations=temporal_enabled,
+        time_frame=describe_time_frame(analysis) if temporal_enabled else None,
     )
     used_in_answer: set[str] = set(used_chunk_ids)
 
@@ -219,7 +299,7 @@ def query_endpoint(
     if not req.retrieve_only:
         try:
             from services.llm import generate
-            answer = generate(context, req.query)
+            answer = generate(context, req.query, temporal=temporal_enabled)
         except RuntimeError as exc:
             # No API key set — surface a helpful message instead of 500
             log.warning("LLM call skipped: %s", exc)
@@ -248,6 +328,7 @@ def query_endpoint(
             published_at=(
                 c.published_at.strftime("%Y-%m-%d") if c.published_at else None
             ),
+            valid_to=c.valid_to.strftime("%Y-%m-%d") if c.valid_to else None,
             is_latest=c.is_latest,
             is_superseded=c.is_superseded,
             temporal_score=c.temporal_score,
@@ -271,6 +352,7 @@ def query_endpoint(
         version_hint=analysis.version_hint,
         analysis=analysis_info,
         temporal_pipeline_applied=temporal_enabled,
+        temporal_filter=temporal_filter,
         sources_used_in_answer=len(used_in_answer),
         conflicts_detected=len(conflicts),
         conflict_pairs=[

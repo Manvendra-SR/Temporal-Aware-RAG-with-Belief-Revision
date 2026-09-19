@@ -22,6 +22,8 @@ interface SourceResult {
   relevance_score: number
   version_string: string | null
   published_at: string | null
+  /** End of the validity window (when a newer version superseded it); null while current. */
+  valid_to: string | null
   is_latest: boolean | null
   is_superseded: boolean
   temporal_score: number | null
@@ -38,10 +40,48 @@ interface ConflictInfo {
   nli_score: number
 }
 
+type TemporalIntent =
+  'current' | 'point_in_time' | 'range' | 'version' | 'historical' | 'atemporal'
+
 interface QueryAnalysisInfo {
+  intent: TemporalIntent
+  as_of: string | null
+  start_date: string | null
+  end_date: string | null
   version_hint: string | null
   temporal_qualifier: boolean
   wants_historical_sources: boolean
+  source: 'llm' | 'default' | 'skipped'
+  error: string | null
+}
+
+/** Plain-English description of how the question was interpreted, or null for
+ *  a "current" question, which is the unremarkable default. */
+function describeAnalysis(a: QueryAnalysisInfo): string | null {
+  switch (a.intent) {
+    case 'point_in_time':
+      return `a question about ${a.as_of}`
+    case 'range':
+      if (a.start_date && a.end_date) return `a question about ${a.start_date} to ${a.end_date}`
+      if (a.end_date) return `a question about the period up to ${a.end_date}`
+      return `a question about the period since ${a.start_date}`
+    case 'version':
+      return `a question about version ${a.version_hint}`
+    case 'historical':
+      return 'a question about the past'
+    case 'atemporal':
+      return 'a question that does not depend on time'
+    default:
+      return null
+  }
+}
+
+interface TemporalFilterInfo {
+  rule: string
+  scoring: string
+  candidates_retrieved: number
+  candidates_valid: number
+  candidates_kept: number
 }
 
 interface QueryResponse {
@@ -52,6 +92,7 @@ interface QueryResponse {
   version_hint: string | null
   analysis: QueryAnalysisInfo
   temporal_pipeline_applied: boolean
+  temporal_filter: TemporalFilterInfo | null
   sources_used_in_answer: number
   conflicts_detected: number
   conflict_pairs: ConflictInfo[]
@@ -196,7 +237,11 @@ function SourceCard({ source, temporalApplied }: { source: SourceResult; tempora
         {/* Status line: current vs historical, and whether it informed the answer */}
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', fontSize: '10.5px' }}>
           {source.published_at && (
-            <span style={{ color: 'var(--text-muted)' }}>{source.published_at}</span>
+            <span style={{ color: 'var(--text-muted)' }}>
+              {source.valid_to
+                ? `valid ${source.published_at} → ${source.valid_to}`
+                : `valid from ${source.published_at}`}
+            </span>
           )}
           {source.is_superseded ? (
             <span style={{ color: 'var(--warning)', fontWeight: 600 }}>Superseded version</span>
@@ -624,11 +669,22 @@ export default function QueryPage() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
 
               {/* How the question was read */}
-              {(result.analysis.version_hint || result.analysis.temporal_qualifier) && (
+              {result.analysis.source === 'default' && (
+                <div className="alert alert-warning" style={{ fontSize: '12.5px' }}>
+                  The question could not be interpreted ({result.analysis.error}), so it was
+                  treated as a question about the <strong>current</strong> state.
+                </div>
+              )}
+              {result.analysis.source === 'llm' && describeAnalysis(result.analysis) && (
                 <div className="alert alert-info" style={{ fontSize: '12.5px' }}>
-                  {result.analysis.version_hint
-                    ? <>Read as a question about <strong>version {result.analysis.version_hint}</strong>, so superseded versions were searched too.</>
-                    : <>Read as a question about <strong>past behaviour</strong>, so superseded versions were searched too.</>}
+                  Read as <strong>{describeAnalysis(result.analysis)}</strong>.
+                </div>
+              )}
+              {result.temporal_filter && (
+                <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                  Only passages <strong>{result.temporal_filter.rule}</strong> were eligible:{' '}
+                  {result.temporal_filter.candidates_valid} of {result.temporal_filter.candidates_retrieved}{' '}
+                  retrieved passages passed, ranked by {result.temporal_filter.scoring}.
                 </div>
               )}
 
@@ -679,7 +735,11 @@ export default function QueryPage() {
                 </div>
               ) : (
                 <div style={{ color: 'var(--text-muted)', fontSize: '13px', fontStyle: 'italic', padding: '12px 0' }}>
-                  No answer generated (retrieve-only mode).
+                  {result.temporal_filter && result.temporal_filter.candidates_valid === 0
+                    ? <>No retrieved passage is {result.temporal_filter.rule}, so no answer was generated.</>
+                    : retrieveOnly
+                      ? 'No answer generated (retrieve-only mode).'
+                      : 'No relevant passages were found, so no answer was generated.'}
                 </div>
               )}
 

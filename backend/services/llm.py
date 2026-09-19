@@ -1,15 +1,17 @@
 """
 services/llm.py — Groq LLM client (singleton).
 
-Single public function:
-    generate(context: str, query: str) -> str
+Public functions:
+    generate(context, query, temporal=True)     answer generation
+    get_client()                                 the shared Groq client, also
+                                                 used by services/query_analyzer.py
 
 Uses the Groq Python SDK. The client is lazily initialised on first call
 and reused for all subsequent requests.
 
 Configuration (from .env via config.py):
     GROQ_API_KEY   — your Groq API key
-    LLM_MODEL      — model ID (default: llama-3.3-70b-versatile)
+    LLM_MODEL      — model ID (default: openai/gpt-oss-120b)
 
 Raises:
     RuntimeError  — if GROQ_API_KEY is not set when generate() is called
@@ -28,14 +30,33 @@ You are a temporally-aware knowledge assistant.
 
 Rules:
 - Answer using ONLY information from the provided sources.
-- Cite every claim with [SOURCE N] inline (e.g. "Autograd uses dynamic graphs [SOURCE 1].").
+- Cite every claim with [SOURCE N] inline (e.g. "Priya is the CEO [SOURCE 1].").
+- Each source header shows when it was in force: "valid A → B" means it was \
+accurate from A until it was superseded on B; "valid from A" means it is still current.
+- If a QUESTION TIME FRAME is given, answer for that time frame using the sources \
+valid during it. If different sources cover different parts of it, describe each \
+with its dates (e.g. "X until 2023-03-15, then Y").
+- If no time frame is given, the question is about the present.
 - Prefer information from sources marked "← PREFERRED" when conflicts exist.
-- If "⚠ TEMPORAL CONFLICT DETECTED" appears in the context, acknowledge it in your answer.
-- Always include the validity date in citations where available: "As of [date], ..."
+- If the context contains a notice (lines starting with ⚠, ℹ or ✓), take it into \
+account and mention any unresolved conflict in your answer.
 - If ANSWER CONFIDENCE is LOW, explicitly tell the user that conflicting information \
 exists and recommend verifying from primary sources.
 - If the sources do not contain enough information to answer, say so clearly.
-- Never invent facts, version numbers, or API names not present in the context.
+- Never invent facts, dates, names or version numbers not present in the context.
+"""
+
+# Used for the non-temporal baseline (no_temporal=true). Deliberately says
+# nothing about time, versions or validity, so the comparison measures what the
+# temporal pipeline adds rather than what a temporally-primed prompt adds.
+BASELINE_SYSTEM_PROMPT = """\
+You are a knowledge assistant that answers questions from retrieved documents.
+
+Rules:
+- Answer using ONLY information from the provided sources.
+- Cite every claim with [SOURCE N] inline (e.g. "Priya is the CEO [SOURCE 1].").
+- If the sources do not contain enough information to answer, say so clearly.
+- Never invent facts not present in the context.
 """
 
 class ModelUnavailableError(RuntimeError):
@@ -48,11 +69,12 @@ class ModelUnavailableError(RuntimeError):
     """
 
 
-# Lazy singleton — created on first call to generate()
+# Lazy singleton — created on first call to get_client()
 _client = None
 
 
-def _get_client():
+def get_client():
+    """Return the shared Groq client. Raises RuntimeError if no API key is set."""
     global _client
     if _client is not None:
         return _client
@@ -68,13 +90,15 @@ def _get_client():
     return _client
 
 
-def generate(context: str, query: str) -> str:
+def generate(context: str, query: str, *, temporal: bool = True) -> str:
     """
     Call Groq to generate an answer grounded in the provided context.
 
     Args:
         context: Formatted context string from context.build_context().
         query:   The user's original question.
+        temporal: False for the non-temporal baseline, which uses
+                  BASELINE_SYSTEM_PROMPT instead of SYSTEM_PROMPT.
 
     Returns:
         The model's answer as a plain string (may contain [SOURCE N] citations).
@@ -82,7 +106,7 @@ def generate(context: str, query: str) -> str:
     Raises:
         RuntimeError: If GROQ_API_KEY is not configured.
     """
-    client = _get_client()
+    client = get_client()
 
     user_message = f"Sources:\n\n{context}\n\nQuestion: {query}"
 
@@ -92,7 +116,7 @@ def generate(context: str, query: str) -> str:
         response = client.chat.completions.create(
             model=settings.llm_model,
             messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": SYSTEM_PROMPT if temporal else BASELINE_SYSTEM_PROMPT},
                 {"role": "user",   "content": user_message},
             ],
             temperature=0.1,    # low temperature for factual accuracy

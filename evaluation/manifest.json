@@ -1,0 +1,30 @@
+{
+  "title": "Northwind Technologies Employee Policy",
+  "versions": [
+    {
+      "file": "northwind_policy_v1.md",
+      "version": "1.0",
+      "published_at": "2021-04-01"
+    },
+    {
+      "file": "northwind_policy_v2.md",
+      "version": "2.0",
+      "published_at": "2022-03-01"
+    },
+    {
+      "file": "northwind_policy_v3.md",
+      "version": "3.0",
+      "published_at": "2023-01-01"
+    },
+    {
+      "file": "northwind_policy_v4.md",
+      "version": "4.0",
+      "published_at": "2024-02-01"
+    },
+    {
+      "file": "northwind_policy_v5.md",
+      "version": "5.0",
+      "published_at": "2025-03-01"
+    }
+  ]
+}

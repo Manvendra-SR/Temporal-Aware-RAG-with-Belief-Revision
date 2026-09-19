@@ -128,7 +128,7 @@ class Chunk(Base):
     content: Mapped[str] = mapped_column(Text, nullable=False)
     content_snippet: Mapped[str | None] = mapped_column(
         String(256), nullable=True
-    )  # first ~200 chars
+    )  # first ~200 chars,
     section_heading: Mapped[str | None] = mapped_column(String(512), nullable=True)
     token_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
@@ -227,7 +227,7 @@ class ConflictPair(Base):
         UUID(as_uuid=False), nullable=True
     )  # query_id
 
-    # Resolution (Phase 7+)
+    # Resolution
     is_resolved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     resolution_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
     resolution_note: Mapped[str | None] = mapped_column(Text, nullable=True)

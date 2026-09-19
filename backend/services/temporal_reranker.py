@@ -1,67 +1,62 @@
 """
-services/temporal_reranker.py — Temporal-aware candidate reranker.
+services/temporal_reranker.py — Intent-aware temporal filtering and ranking.
 
-rerank(candidates, query_analysis) → list[CandidateChunk]
+rerank(candidates, query_analysis, now) → list[CandidateChunk]
 
-Scoring formula
----------------
-For each candidate chunk:
+Two steps, deliberately kept separate:
 
-    age_days        = (today - chunk.valid_from).days   [0 if valid_from is None]
-    temporal_weight = 2 ** (-age_days / half_life_days)
+1. FILTER (hard) — is this chunk allowed to answer the question at all?
+   Decided from the chunk's validity window [valid_from, valid_to), which
+   version_resolver maintains: valid_from is the document's publication date,
+   valid_to is the publication date of the version that superseded it (NULL
+   while it is still current). Windows are compared at day granularity,
+   because publication dates are days.
 
-    version_boost:
-        1.0  if query has a version_hint AND chunk version matches
-        0.3  if query has NO version_hint  (neutral — no preference expressed)
-        0.0  if query has a version_hint AND chunk version does NOT match
+       intent          chunk is kept when
+       ─────────────   ─────────────────────────────────────────────────────
+       current         it is valid today (not superseded, already published)
+       atemporal       same as current — time does not matter to the question,
+                       so there is no reason to serve outdated text
+       point_in_time   its window contains as_of
+       range           its window overlaps [start_date, end_date] (inclusive;
+                       either bound may be open)
+       version         its document version matches the requested version
+       historical      always — "how did it used to be?" needs every version
 
-    latest_bonus    = 1.0 if doc.is_latest else 0.0
+2. SCORE (soft) — among the chunks that passed, which is best?
 
-    composite = (
-        0.5 * relevance_score      ← fused BM25+dense relevance, normalised [0,1]
-      + 0.3 * temporal_weight
-      + 0.1 * version_boost
-      + 0.1 * latest_bonus
-    )
+   current:
+       composite = 0.5·relevance + 0.3·freshness + 0.1·version_boost + 0.1·latest
+       freshness = 2 ** (-age_days / half_life_days)
 
-Why `relevance_score` and not `semantic_score`
-----------------------------------------------
-This term previously used `semantic_score`, which had two problems:
+   every other intent:
+       composite = relevance
 
-  1. It discarded the BM25 signal entirely, throwing away the result of the
-     hybrid retrieval + RRF fusion the pipeline had just computed.
-  2. In its old `1/(1+d)` form it spanned only ~0.40-0.43 in practice, so
-     `0.5 * semantic` varied by ~0.01 while `0.3 * temporal` varied by 0.3.
-     Relevance was nominally weighted highest but contributed ~2% of the
-     ranking variance — the reranker was, in effect, sorting by date alone.
+   Freshness only makes sense when the question is about the present. For
+   "who was CEO in 2023?" the filter has already restricted the candidates to
+   the right period; adding a recency bonus on top would push the answer back
+   toward the newest document — the exact failure this module exists to fix.
 
-`relevance_score` is the RRF score min-max normalised across the candidate set
-(see services/retriever.py), so it carries both retrievers' signal and actually
-spans [0, 1]. The documented weights now mean what they say.
+`relevance` is the fused BM25+dense RRF score, min-max normalised to [0, 1].
+It is re-normalised after filtering, so the scale reflects the candidates that
+are actually competing rather than ones the filter already removed.
 
-`latest_bonus` is 1.0/0.0 (scaled by W_LATEST) rather than the previous
-0.1/0.0, which was multiplied by W_LATEST again and so contributed at most
-0.01 — an order of magnitude less than the comment claimed.
-
-Pre-filter
-----------
-Chunks with is_superseded=True are removed UNLESS the query wants historical
-sources — i.e. the user used historical wording OR pinned a specific version
-(see QueryAnalysis.wants_historical_sources).
+The caller over-fetches and truncates afterwards (see routers/query.py): the
+filter can remove many candidates, and truncating first would leave too few.
 """
 
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from config import settings
-from services.query_analyzer import QueryAnalysis
-from services.retriever import CandidateChunk
+from services.query_analyzer import QueryAnalysis, TemporalIntent
+from services.retriever import CandidateChunk, assign_relevance_scores
 
 log = logging.getLogger(__name__)
 
-# ── Composite score weights (must sum to 1.0) ────────────────────────────────
+# ── Composite score weights for "current" questions (must sum to 1.0) ────────
 W_RELEVANCE = 0.5
 W_TEMPORAL  = 0.3
 W_VERSION   = 0.1
@@ -69,6 +64,9 @@ W_LATEST    = 0.1
 
 # Version boost applied when the user expressed no version preference.
 NEUTRAL_VERSION_BOOST = 0.3
+
+# Intents whose filter is "valid today".
+_PRESENT_INTENTS = frozenset({TemporalIntent.CURRENT, TemporalIntent.ATEMPORAL})
 
 
 def half_life_days() -> int:
@@ -82,70 +80,184 @@ def half_life_days() -> int:
     return settings.temporal_half_life_days
 
 
+def uses_recency(query_analysis: QueryAnalysis) -> bool:
+    """True when freshness contributes to the score (current questions only)."""
+    return query_analysis.intent is TemporalIntent.CURRENT
+
+
 def rerank(
     candidates: list[CandidateChunk],
     query_analysis: QueryAnalysis,
     now: datetime | None = None,
 ) -> list[CandidateChunk]:
     """
-    Rerank *candidates* using fused relevance + temporal freshness + version awareness.
+    Filter *candidates* to those temporally valid for the question, then rank them.
 
     Args:
         candidates:     Output of :func:`~services.retriever.hybrid_retrieve`.
         query_analysis: Output of :func:`~services.query_analyzer.analyze`.
-        now:            Reference time for age computation. Defaults to the
+        now:            Reference time for "today" and for ages. Defaults to the
                         current UTC time; injectable so tests are deterministic.
 
     Returns:
-        Sorted list of the same :class:`CandidateChunk` objects with
-        ``temporal_score``, ``version_boost``, ``latest_bonus`` and
-        ``composite_score`` populated. Superseded chunks may be filtered out,
-        so the returned list can be shorter than the input.
+        The surviving candidates, sorted best-first, with ``relevance_score``
+        re-normalised and ``composite_score`` populated. ``temporal_score``,
+        ``version_boost`` and ``latest_bonus`` are populated only when recency
+        scoring applies, and are None otherwise. Not truncated — the caller
+        decides how many to keep.
     """
-    today = now or datetime.now(timezone.utc)
-    version_hint = query_analysis.version_hint
-    allow_superseded = query_analysis.wants_historical_sources
+    now = _as_utc(now or datetime.now(timezone.utc))
+    today = now.date()
+
+    kept = filter_by_validity(candidates, query_analysis, today)
+    assign_relevance_scores(kept)
+
+    recency = uses_recency(query_analysis)
     hl = half_life_days()
-
-    kept: list[CandidateChunk] = []
-
-    for cand in candidates:
-        # ── Pre-filter ───────────────────────────────────────────────────────
-        if cand.is_superseded and not allow_superseded:
-            log.debug(
-                "rerank: dropping superseded chunk %s (doc=%s v=%s)",
-                cand.chunk_id[:8], cand.doc_id[:8], cand.version_string,
+    for cand in kept:
+        if recency:
+            temporal_weight = temporal_weight_for(cand.valid_from, now, hl)
+            version_boost = version_boost_for(cand.version_string, query_analysis.version_hint)
+            latest_bonus = 1.0 if cand.is_latest else 0.0
+            composite = (
+                W_RELEVANCE * cand.relevance_score
+                + W_TEMPORAL * temporal_weight
+                + W_VERSION  * version_boost
+                + W_LATEST   * latest_bonus
             )
-            continue
-
-        temporal_weight = temporal_weight_for(cand.valid_from, today, hl)
-        version_boost = version_boost_for(cand.version_string, version_hint)
-        latest_bonus = 1.0 if cand.is_latest else 0.0
-
-        composite = (
-            W_RELEVANCE * cand.relevance_score
-            + W_TEMPORAL * temporal_weight
-            + W_VERSION  * version_boost
-            + W_LATEST   * latest_bonus
-        )
-
-        cand.temporal_score  = round(temporal_weight, 4)
-        cand.version_boost   = round(version_boost, 4)
-        cand.latest_bonus    = round(latest_bonus, 4)
+            cand.temporal_score = round(temporal_weight, 4)
+            cand.version_boost = round(version_boost, 4)
+            cand.latest_bonus = round(latest_bonus, 4)
+        else:
+            composite = cand.relevance_score
+            cand.temporal_score = cand.version_boost = cand.latest_bonus = None
         cand.composite_score = round(composite, 4)
 
-        kept.append(cand)
-
-    # Sort by composite descending. chunk_id is a secondary key so that ties
-    # produce a stable, reproducible order across runs — this matters for
-    # evaluation, where a coin-flip ordering would make results irreproducible.
+    # chunk_id is a secondary key so ties produce a stable, reproducible order
+    # across runs — a coin-flip ordering would make evaluation irreproducible.
     kept.sort(key=lambda c: (-(c.composite_score or 0.0), c.chunk_id))
 
     log.info(
-        "rerank: %d → %d candidates (version_hint=%r, allow_superseded=%s, half_life=%dd)",
-        len(candidates), len(kept), version_hint, allow_superseded, hl,
+        "rerank: %d → %d candidates (intent=%s, filter=%s, scoring=%s)",
+        len(candidates), len(kept), query_analysis.intent.value,
+        describe_filter(query_analysis, today), scoring_label(query_analysis),
     )
     return kept
+
+
+# ── Filtering ────────────────────────────────────────────────────────────────
+
+
+def filter_by_validity(
+    candidates: list[CandidateChunk],
+    query_analysis: QueryAnalysis,
+    today: date,
+) -> list[CandidateChunk]:
+    """Keep only the candidates that are temporally valid for the question."""
+    return [c for c in candidates if is_temporally_valid(c, query_analysis, today)]
+
+
+def is_temporally_valid(
+    chunk: CandidateChunk,
+    query_analysis: QueryAnalysis,
+    today: date,
+) -> bool:
+    """Apply the intent's filter rule (see the module docstring) to one chunk."""
+    intent = query_analysis.intent
+
+    if intent in _PRESENT_INTENTS:
+        # is_superseded and valid_to are set together by version_resolver;
+        # checking the flag as well keeps superseded text out of current
+        # answers even for a row whose valid_to was never stamped.
+        return not chunk.is_superseded and valid_on(chunk, today)
+
+    if intent is TemporalIntent.POINT_IN_TIME:
+        return valid_on(chunk, query_analysis.as_of)
+
+    if intent is TemporalIntent.RANGE:
+        return overlaps(chunk, query_analysis.start_date, query_analysis.end_date)
+
+    if intent is TemporalIntent.VERSION:
+        return version_boost_for(chunk.version_string, query_analysis.version_hint) == 1.0
+
+    # HISTORICAL: every version is eligible.
+    return True
+
+
+def valid_on(chunk: CandidateChunk, day: date | None) -> bool:
+    """
+    True when *day* falls inside the chunk's window [valid_from, valid_to).
+
+    A missing valid_from means "valid since forever" and a missing valid_to
+    means "still valid", so an undated chunk is valid on every day.
+    """
+    if day is None:
+        return True
+    start, end = _day(chunk.valid_from), _day(chunk.valid_to)
+    if start is not None and day < start:
+        return False
+    if end is not None and day >= end:
+        return False
+    return True
+
+
+def overlaps(chunk: CandidateChunk, start: date | None, end: date | None) -> bool:
+    """
+    True when the chunk's window [valid_from, valid_to) shares at least one day
+    with the inclusive query range [start, end]. None means an open bound.
+    """
+    valid_from, valid_to = _day(chunk.valid_from), _day(chunk.valid_to)
+    if end is not None and valid_from is not None and valid_from > end:
+        return False          # became valid only after the range ended
+    if start is not None and valid_to is not None and valid_to <= start:
+        return False          # stopped being valid before the range began
+    return True
+
+
+def describe_filter(query_analysis: QueryAnalysis, today: date) -> str:
+    """Plain-English description of the filter applied, for the API and logs."""
+    a = query_analysis
+    if a.intent in _PRESENT_INTENTS:
+        return f"valid today ({today.isoformat()})"
+    if a.intent is TemporalIntent.POINT_IN_TIME:
+        return f"valid on {a.as_of.isoformat()}"
+    if a.intent is TemporalIntent.RANGE:
+        if a.start_date and a.end_date:
+            return f"valid at any time from {a.start_date.isoformat()} to {a.end_date.isoformat()}"
+        if a.end_date:
+            return f"valid at any time up to {a.end_date.isoformat()}"
+        return f"valid at any time since {a.start_date.isoformat()}"
+    if a.intent is TemporalIntent.VERSION:
+        return f"from version {a.version_hint}"
+    return "all versions (no time filter)"
+
+
+def describe_time_frame(query_analysis: QueryAnalysis) -> str | None:
+    """
+    The period a past-oriented question is about, phrased for the LLM prompt.
+    None for questions about the present, which need no time frame.
+    """
+    a = query_analysis
+    if a.intent is TemporalIntent.POINT_IN_TIME:
+        return f"as of {a.as_of.isoformat()}"
+    if a.intent is TemporalIntent.RANGE:
+        if a.start_date and a.end_date:
+            return f"{a.start_date.isoformat()} to {a.end_date.isoformat()}"
+        if a.end_date:
+            return f"up to {a.end_date.isoformat()}"
+        return f"since {a.start_date.isoformat()}"
+    if a.intent is TemporalIntent.VERSION:
+        return f"version {a.version_hint} of the documents"
+    if a.intent is TemporalIntent.HISTORICAL:
+        return "the past (sources from every version are included)"
+    return None
+
+
+def scoring_label(query_analysis: QueryAnalysis) -> str:
+    return "relevance + recency" if uses_recency(query_analysis) else "relevance only"
+
+
+# ── Scoring helpers ──────────────────────────────────────────────────────────
 
 
 def temporal_weight_for(
@@ -167,13 +279,7 @@ def temporal_weight_for(
     if hl <= 0:
         return 1.0
 
-    # Ensure timezone-aware comparison
-    if valid_from.tzinfo is None:
-        valid_from = valid_from.replace(tzinfo=timezone.utc)
-    if now.tzinfo is None:
-        now = now.replace(tzinfo=timezone.utc)
-
-    age_days = max(0, (now - valid_from).days)
+    age_days = max(0, (_as_utc(now) - _as_utc(valid_from)).days)
     return 2.0 ** (-age_days / hl)
 
 
@@ -230,3 +336,12 @@ def _component_eq(a: str, b: str) -> bool:
     if a.isdigit() and b.isdigit():
         return int(a) == int(b)
     return a == b
+
+
+def _as_utc(d: datetime) -> datetime:
+    return d if d.tzinfo is not None else d.replace(tzinfo=timezone.utc)
+
+
+def _day(d: datetime | None) -> date | None:
+    """The UTC calendar day of a timestamp."""
+    return None if d is None else _as_utc(d).astimezone(timezone.utc).date()

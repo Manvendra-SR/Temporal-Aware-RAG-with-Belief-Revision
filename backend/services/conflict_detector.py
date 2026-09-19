@@ -8,8 +8,29 @@ Pipeline
 Step 1  Pair selection      — shared entity OR lexical overlap > threshold
 Step 2  Cache check         — query conflict_pairs for existing canonical pairs
 Step 3  Batch NLI           — predict contradiction score for uncached pairs
-Step 4  Classify            — direct_contradiction | version_supersession
+Step 4  Classify            — version_supersession | direct_contradiction
 Step 5  Persist             — INSERT … ON CONFLICT DO NOTHING (fully idempotent)
+
+Classification
+--------------
+NLI decides WHETHER two chunks contradict. Lineage decides WHAT KIND of
+contradiction it is:
+
+    version_supersession   both chunks come from the same version lineage
+                           (one document is a version of the other), so the
+                           disagreement is the document changing over time
+    direct_contradiction   the chunks come from unrelated documents, so nothing
+                           establishes which one is authoritative
+
+Dates play no part in the type. An earlier design called any contradiction
+between chunks ≥ 90 days apart a "version_supersession", which labelled two
+unrelated documents as versions of each other whenever they happened to be
+published a few months apart — and belief revision then resolved them with
+high confidence on the strength of a relationship that did not exist.
+
+Cached rows store the NLI score. Their type is recomputed from lineage every
+time they are loaded (and corrected in the database if it changed), so rows
+written under an older rule never leak a stale type into a query.
 
 Idempotency guarantee
 ---------------------
@@ -42,9 +63,8 @@ log = logging.getLogger(__name__)
 
 # ── Thresholds ────────────────────────────────────────────────────────────────
 
-NLI_THRESHOLD: float = 0.70        # P(contradiction) → direct_contradiction
+NLI_THRESHOLD: float = 0.70        # P(contradiction) at or above → a conflict
 LEXICAL_SIM_THRESHOLD: float = 0.55  # Pair selection gate — see _lexical_cosine
-VERSION_SUPERSESSION_GAP_DAYS: int = 90  # Days gap for version_supersession
 
 # Regex: named entities — CamelCase words, dotted names, Version X.Y, ALL_CAPS consts
 _ENTITY_RE = re.compile(
@@ -98,12 +118,13 @@ def detect(
     canonical_keys = [_canonical(a.chunk_id, b.chunk_id) for a, b in candidate_pairs]
 
     # ── Step 2: Cache check ───────────────────────────────────────────────────
-    cached_map = _load_cached(db, canonical_keys)
+    cached_rows = _load_cached(db, canonical_keys)
+    cached_results = _reclassify_cached(db, candidate_pairs, canonical_keys, cached_rows)
 
     uncached_pairs = [
         (a, b)
         for (a, b), key in zip(candidate_pairs, canonical_keys)
-        if key not in cached_map
+        if key not in cached_rows
     ]
 
     # ── Step 3: Batch NLI ────────────────────────────────────────────────────
@@ -139,12 +160,12 @@ def detect(
         _persist(db, new_results, query_id)
 
     # Combine cached + new
-    all_results: list[ConflictResult] = list(cached_map.values()) + new_results
+    all_results: list[ConflictResult] = cached_results + new_results
 
     elapsed = (time.monotonic() - t_start) * 1000
     log.info(
         "conflict_detector: total %.0f ms — %d cached, %d new, %d conflicts",
-        elapsed, len(cached_map), len(new_results), len(all_results),
+        elapsed, len(cached_results), len(new_results), len(all_results),
     )
     return all_results
 
@@ -176,10 +197,9 @@ def _select_pairs(
 
     Why same-document pairs are excluded
     ------------------------------------
-    Two passages from the same document share a publication date, so the gap
-    between them is always zero. _classify can therefore never call them a
-    version_supersession, and belief revision's zero-gap branch always keeps
-    both at "low" confidence — there is no action such a pair can ever produce.
+    Two passages of one document are neither a version change nor a
+    disagreement between sources, and belief revision has no basis for
+    preferring one over the other — there is no action such a pair can produce.
 
     What they do instead is corrupt the signal. NLI cross-encoders readily
     report contradiction between topically adjacent passages of ordinary prose,
@@ -242,12 +262,8 @@ def _lexical_cosine(text_a: str, text_b: str) -> float:
 def _load_cached(
     db: Session,
     canonical_keys: list[tuple[str, str]],
-) -> dict[tuple[str, str], ConflictResult]:
-    """
-    Query conflict_pairs for any already-stored (chunk_id_a, chunk_id_b) pairs.
-
-    Returns a dict keyed by canonical tuple → ConflictResult(is_cached=True).
-    """
+) -> dict[tuple[str, str], ConflictPair]:
+    """Return the already-stored ConflictPair rows for these canonical pairs."""
     if not canonical_keys:
         return {}
 
@@ -258,18 +274,51 @@ def _load_cached(
         )
         .all()
     )
+    return {(row.chunk_id_a, row.chunk_id_b): row for row in rows}
 
-    result: dict[tuple[str, str], ConflictResult] = {}
-    for row in rows:
-        key = (row.chunk_id_a, row.chunk_id_b)
-        result[key] = ConflictResult(
+
+def _reclassify_cached(
+    db: Session,
+    pairs: list[tuple[CandidateChunk, CandidateChunk]],
+    canonical_keys: list[tuple[str, str]],
+    cached_rows: dict[tuple[str, str], ConflictPair],
+) -> list[ConflictResult]:
+    """
+    Turn cached rows into ConflictResults, re-deriving each type from lineage.
+
+    The NLI score is what the cache saves; the type is cheap to recompute and
+    must follow the current rule. Rows whose stored type differs are updated so
+    the Conflicts page agrees with what queries report.
+    """
+    results: list[ConflictResult] = []
+    changed = 0
+    for (a, b), key in zip(pairs, canonical_keys):
+        row = cached_rows.get(key)
+        if row is None:
+            continue
+        score = row.nli_score or 0.0
+        conflict_type = _classify(a, b, score)
+        if conflict_type is None:
+            continue
+        if row.conflict_type != conflict_type:
+            row.conflict_type = conflict_type
+            changed += 1
+        results.append(ConflictResult(
             chunk_id_a=row.chunk_id_a,
             chunk_id_b=row.chunk_id_b,
-            conflict_type=row.conflict_type or "unknown",
-            nli_score=row.nli_score or 0.0,
+            conflict_type=conflict_type,
+            nli_score=score,
             is_cached=True,
-        )
-    return result
+        ))
+
+    if changed:
+        try:
+            db.commit()
+            log.info("conflict_detector: reclassified %d cached conflict rows.", changed)
+        except Exception:
+            log.error("conflict_detector: failed to update cached conflict types.", exc_info=True)
+            db.rollback()
+    return results
 
 
 def _classify(
@@ -280,30 +329,21 @@ def _classify(
     """
     Classify a pair given its NLI contradiction score.
 
-    Returns a conflict_type string, or None when the pair is below the
-    contradiction threshold and is therefore not a conflict at all.
-
-    Only two types are ever produced — "version_supersession" when the two
-    chunks are separated by at least VERSION_SUPERSESSION_GAP_DAYS, and
-    "direct_contradiction" otherwise. There is deliberately no "scope_change"
-    branch: nothing detects scope, so emitting that type would be fabrication.
+    Returns None when the score is below NLI_THRESHOLD (not a conflict),
+    "version_supersession" when both chunks belong to the same version lineage,
+    and "direct_contradiction" otherwise. See "Classification" above.
     """
     if nli_score < NLI_THRESHOLD:
         return None
-
-    # Prefer version_supersession when there is a clear time gap
-    date_a = a.valid_from
-    date_b = b.valid_from
-    if date_a and date_b:
-        if date_a.tzinfo is None:
-            date_a = date_a.replace(tzinfo=timezone.utc)
-        if date_b.tzinfo is None:
-            date_b = date_b.replace(tzinfo=timezone.utc)
-        gap_days = abs((date_a - date_b).days)
-        if gap_days >= VERSION_SUPERSESSION_GAP_DAYS:
-            return "version_supersession"
-
+    if _lineage(a) == _lineage(b):
+        return "version_supersession"
     return "direct_contradiction"
+
+
+def _lineage(chunk: CandidateChunk) -> str:
+    # A chunk without a resolved lineage is treated as its own document's
+    # lineage, never as sharing an empty id with other unresolved chunks.
+    return chunk.lineage_id or chunk.doc_id
 
 
 def _persist(

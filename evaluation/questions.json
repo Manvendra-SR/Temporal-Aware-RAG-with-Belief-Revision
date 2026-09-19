@@ -1,0 +1,189 @@
+{
+  "_comment": "Ground truth for the Northwind policy corpus. 'answer' is the reference answer the LLM judge compares each system's answer against. 'supporting_versions' documents which policy versions the answer comes from; it is not used for grading. Version windows: 1.0 [2021-04-01, 2022-03-01), 2.0 [2022-03-01, 2023-01-01), 3.0 [2023-01-01, 2024-02-01), 4.0 [2024-02-01, 2025-03-01), 5.0 [2025-03-01, now).",
+  "questions": [
+    {
+      "id": "Q01", "type": "current",
+      "question": "How many days of annual leave do Northwind employees get per year?",
+      "answer": "24 days per year.",
+      "supporting_versions": ["5.0"]
+    },
+    {
+      "id": "Q02", "type": "current",
+      "question": "How many days per week can employees work remotely?",
+      "answer": "Up to 2 days per week.",
+      "supporting_versions": ["5.0"]
+    },
+    {
+      "id": "Q03", "type": "current",
+      "question": "What is the notice period for resignation after probation?",
+      "answer": "30 days.",
+      "supporting_versions": ["5.0"]
+    },
+    {
+      "id": "Q04", "type": "current",
+      "question": "How many weeks of paid parental leave does the company provide?",
+      "answer": "26 weeks.",
+      "supporting_versions": ["5.0"]
+    },
+    {
+      "id": "Q05", "type": "current",
+      "question": "What is the maximum amount a manager can approve for business travel expenses per trip?",
+      "answer": "INR 60,000 per trip.",
+      "supporting_versions": ["5.0"]
+    },
+    {
+      "id": "Q06", "type": "current",
+      "question": "What is the sum insured under the company's group health insurance?",
+      "answer": "INR 10 lakh.",
+      "supporting_versions": ["5.0"]
+    },
+
+    {
+      "id": "Q07", "type": "point_in_time",
+      "question": "How many days of annual leave were employees entitled to on 2022-06-15?",
+      "answer": "20 days per year.",
+      "supporting_versions": ["2.0"]
+    },
+    {
+      "id": "Q08", "type": "point_in_time",
+      "question": "How many days per week could employees work remotely as of 2023-06-15?",
+      "answer": "Up to 3 days per week.",
+      "supporting_versions": ["3.0"]
+    },
+    {
+      "id": "Q09", "type": "point_in_time",
+      "question": "What was the notice period for resignation on 2021-09-15?",
+      "answer": "60 days.",
+      "supporting_versions": ["1.0"]
+    },
+    {
+      "id": "Q10", "type": "point_in_time",
+      "question": "How many weeks of paid parental leave were offered as of 2024-08-15?",
+      "answer": "16 weeks.",
+      "supporting_versions": ["4.0"]
+    },
+    {
+      "id": "Q11", "type": "point_in_time",
+      "question": "What was the maximum travel expense a manager could approve per trip on 2022-10-15?",
+      "answer": "INR 25,000 per trip.",
+      "supporting_versions": ["2.0"]
+    },
+    {
+      "id": "Q12", "type": "point_in_time",
+      "question": "What was the sum insured under the group health insurance on 2021-08-15?",
+      "answer": "INR 3 lakh.",
+      "supporting_versions": ["1.0"]
+    },
+    {
+      "id": "Q13", "type": "point_in_time",
+      "question": "What was the notice period for resignation on 2024-03-15?",
+      "answer": "45 days.",
+      "supporting_versions": ["4.0"]
+    },
+    {
+      "id": "Q14", "type": "point_in_time",
+      "question": "How many days per week could employees work remotely on 2022-01-15?",
+      "answer": "Up to 1 day per week.",
+      "supporting_versions": ["1.0"]
+    },
+
+    {
+      "id": "Q15", "type": "historical",
+      "question": "How many days per week could employees work remotely when the policy was first issued?",
+      "answer": "Up to 1 day per week.",
+      "supporting_versions": ["1.0"]
+    },
+    {
+      "id": "Q16", "type": "historical",
+      "question": "What was the earliest health insurance sum insured the company offered?",
+      "answer": "INR 3 lakh.",
+      "supporting_versions": ["1.0"]
+    },
+    {
+      "id": "Q17", "type": "historical",
+      "question": "How many weeks of paid parental leave did the company offer before 2024?",
+      "answer": "12 weeks.",
+      "supporting_versions": ["1.0", "2.0", "3.0"]
+    },
+    {
+      "id": "Q18", "type": "historical",
+      "question": "What was the notice period for resignation during 2023?",
+      "answer": "45 days.",
+      "supporting_versions": ["3.0"]
+    },
+    {
+      "id": "Q19", "type": "historical",
+      "question": "What was the manager travel approval limit before it was last increased?",
+      "answer": "INR 40,000 per trip.",
+      "supporting_versions": ["3.0", "4.0"]
+    },
+
+    {
+      "id": "Q20", "type": "conflict",
+      "question": "What changed about remote work between the 2024 policy and the 2025 policy?",
+      "answer": "The remote work allowance was reduced from 3 days per week to 2 days per week.",
+      "supporting_versions": ["4.0", "5.0"]
+    },
+    {
+      "id": "Q21", "type": "conflict",
+      "question": "How has the notice period for resignation changed over time?",
+      "answer": "It was 60 days originally, was reduced to 45 days, and is now 30 days.",
+      "supporting_versions": ["1.0", "2.0", "3.0", "4.0", "5.0"]
+    },
+    {
+      "id": "Q22", "type": "conflict",
+      "question": "Did the annual leave entitlement increase in 2024, and by how much?",
+      "answer": "Yes. It increased from 20 days to 24 days per year, an increase of 4 days.",
+      "supporting_versions": ["3.0", "4.0"]
+    },
+    {
+      "id": "Q23", "type": "conflict",
+      "question": "What was the notice period before it was reduced to 30 days?",
+      "answer": "45 days.",
+      "supporting_versions": ["3.0", "4.0", "5.0"]
+    },
+    {
+      "id": "Q24", "type": "conflict",
+      "question": "Compare the paid parental leave in the first policy with the current policy.",
+      "answer": "The first policy gave 12 weeks; the current policy gives 26 weeks.",
+      "supporting_versions": ["1.0", "5.0"]
+    },
+    {
+      "id": "Q25", "type": "conflict",
+      "question": "Is the current remote work allowance higher or lower than it was in 2023?",
+      "answer": "Lower. It was 3 days per week in 2023 and is 2 days per week now.",
+      "supporting_versions": ["3.0", "5.0"]
+    },
+
+    {
+      "id": "Q26", "type": "stable",
+      "question": "In which city is the Northwind head office located?",
+      "answer": "Pune.",
+      "supporting_versions": ["1.0", "2.0", "3.0", "4.0", "5.0"]
+    },
+    {
+      "id": "Q27", "type": "stable",
+      "question": "How long is the probation period for new employees?",
+      "answer": "6 months.",
+      "supporting_versions": ["1.0", "2.0", "3.0", "4.0", "5.0"]
+    },
+    {
+      "id": "Q28", "type": "stable",
+      "question": "What are the standard working hours?",
+      "answer": "9:30 AM to 6:00 PM, Monday to Friday.",
+      "supporting_versions": ["1.0", "2.0", "3.0", "4.0", "5.0"]
+    },
+    {
+      "id": "Q29", "type": "stable",
+      "question": "How many public holidays do employees receive each year?",
+      "answer": "12 public holidays.",
+      "supporting_versions": ["1.0", "2.0", "3.0", "4.0", "5.0"]
+    },
+    {
+      "id": "Q30", "type": "stable",
+      "question": "When is salary paid each month?",
+      "answer": "On the last working day of each month.",
+      "supporting_versions": ["1.0", "2.0", "3.0", "4.0", "5.0"]
+    }
+  ]
+}

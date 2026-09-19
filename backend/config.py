@@ -15,7 +15,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # working directory (previously a relative "../.env" only worked when
 # uvicorn was launched from inside backend/).
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DATA_DIR = PROJECT_ROOT / "data"
 
 
 class Settings(BaseSettings):
@@ -60,6 +59,11 @@ class Settings(BaseSettings):
     # app unstartable on any machine without a GPU.
     embedding_device: str = "auto"
 
+    # Where the FAISS and BM25 index files live. Empty means <project>/data.
+    # Set it (with DB_NAME) to run against a separate corpus — the evaluation in
+    # evaluation/README.md does this so its documents never mix with yours.
+    data_dir: str = ""
+
     # ── Temporal decay ───────────────────────────────────────────────────────
     # SINGLE SOURCE OF TRUTH for temporal decay. Every module that needs a
     # half-life reads it from here (services/temporal_reranker.py).
@@ -83,3 +87,8 @@ class Settings(BaseSettings):
 
 # Single instance used across the application
 settings = Settings()
+
+# Search-index directory. Resolved here, after settings, so DATA_DIR can be set
+# in the environment or .env like every other setting. A relative path is
+# relative to the process's working directory.
+DATA_DIR = Path(settings.data_dir).resolve() if settings.data_dir else PROJECT_ROOT / "data"

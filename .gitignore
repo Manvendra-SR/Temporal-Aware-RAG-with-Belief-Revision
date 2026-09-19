@@ -20,6 +20,7 @@ env/
 
 # Data
 data/
+evaluation/eval_data/
 *.index
 *.pkl
 
@@ -46,4 +47,5 @@ Thumbs.db
 *.log
 
 # Implementation files
-Implementation_roadmap.md
+ARCHITECTURE_DEEP_DIVE.md
+backend/tests/

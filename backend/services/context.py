@@ -1,29 +1,31 @@
 """
 services/context.py — Context string builder for the LLM prompt.
 
-build_context(chunks, budget, revision_result) → (context_str, n_sources_included)
+build_context(chunks, budget, revision_result, temporal_annotations, time_frame)
+    -> (context_str, chunk_ids_included)
 
-Without revision_result (Phase 5 and below):
-    [SOURCE 1 | PyTorch v2.2 Docs]
+Baseline (temporal_annotations=False) - plain RAG, nothing temporal leaks:
+    [SOURCE 1 | Company Handbook]
     <content of chunk 1>
 
-    [SOURCE 2 | Attention Is All You Need]
-    <content of chunk 2>
+Temporal pipeline (temporal_annotations=True):
+    QUESTION TIME FRAME: 2023-01-01 to 2023-12-31. Answer for this time frame, ...
 
-With revision_result (Phase 7+):
-    [SOURCE 1 | pytorch_docs v2.2 | valid from 2024-01-15]   ← PREFERRED
+    ℹ VERSION CHANGE: Company Handbook v1.0 (valid 2022-01-01 → 2023-03-15) and
+    Company Handbook v2.0 (valid since 2023-03-15) are versions of the same ...
+
+    [SOURCE 1 | Company Handbook | v1.0 | valid 2022-01-01 → 2023-03-15]
     <content>
 
-    ⚠ TEMPORAL CONFLICT DETECTED:
-    pytorch_docs v1.13 (2022-12-15) and pytorch_docs v2.2 (2024-01-15) make conflicting claims.
-    Source 1 is more recent and preferred. The older claim was:
-    "torch.autograd.Variable should be used to wrap tensors"
-
-    [SOURCE 2 | pytorch_docs v1.13 | valid from 2022-12-15]   [DEPRECATED]
+    [SOURCE 2 | Company Handbook | v2.0 | valid from 2023-03-15]
     <content>
 
-    ANSWER CONFIDENCE: medium
-    REASON: Conflict resolved by temporal preference (>90 day gap)
+    ANSWER CONFIDENCE: HIGH
+    REASON: ...
+
+"valid A → B" means the source was in force from A until it was superseded on
+B; "valid from A" means it is still in force. Chunks that won a conflict are
+marked "← PREFERRED" (see belief_revision.RevisionResult.preferred_chunks).
 """
 
 from __future__ import annotations
@@ -51,6 +53,9 @@ def build_context(
     chunks: list[CandidateChunk],
     budget: int = 3000,
     revision_result: Optional["RevisionResult"] = None,
+    *,
+    temporal_annotations: bool = True,
+    time_frame: Optional[str] = None,
 ) -> tuple[str, list[str]]:
     """
     Build a formatted context string from a ranked list of chunks.
@@ -61,6 +66,14 @@ def build_context(
         revision_result: Optional RevisionResult from belief_revision.revise().
                          When provided, chunks are annotated with PREFERRED /
                          DEPRECATED markers and conflict notices are injected.
+        temporal_annotations:
+                         False for the non-temporal baseline: headers carry only
+                         the source number and title, and no time frame, notice,
+                         marker or confidence footer is emitted - so the baseline
+                         LLM receives no version or date information at all.
+        time_frame:      Description of the period the question is about, for
+                         questions that are not about the present. Emitted
+                         first so the model answers for that period.
 
     Returns:
         (context_string, chunk_ids_actually_included)
@@ -72,6 +85,10 @@ def build_context(
         model actually saw.
     """
     # Determine which chunk_ids are excluded (deprecated) per revision result
+    if not temporal_annotations:
+        revision_result = None
+        time_frame = None
+
     exclude_set: set[str] = set()
     preferred_set: set[str] = set()
     if revision_result is not None:
@@ -81,6 +98,14 @@ def build_context(
     parts: list[str] = []
     used_tokens = 0
     included_ids: list[str] = []
+
+    if time_frame:
+        frame = (
+            f"QUESTION TIME FRAME: {time_frame}. Answer for this time frame, "
+            f"not necessarily for the present."
+        )
+        parts.append(frame)
+        used_tokens += _count_tokens(frame)
 
     # Inject conflict notices once at the top (before any source block)
     if revision_result is not None and revision_result.conflict_notices:
@@ -93,10 +118,12 @@ def build_context(
     for i, chunk in enumerate(chunks, start=1):
         # Build header with temporal metadata when available
         header_parts = [f"SOURCE {i} | {chunk.doc_title}"]
-        if chunk.version_string:
-            header_parts.append(f"v{chunk.version_string}")
-        if chunk.valid_from:
-            header_parts.append(f"valid from {chunk.valid_from.strftime('%Y-%m-%d')}")
+        if temporal_annotations:
+            if chunk.version_string:
+                header_parts.append(f"v{chunk.version_string}")
+            window = _validity_window(chunk)
+            if window:
+                header_parts.append(window)
 
         header = "[" + " | ".join(header_parts) + "]"
 
@@ -139,3 +166,12 @@ def build_context(
         len(included_ids), len(chunks), used_tokens, budget,
     )
     return context, included_ids
+
+
+def _validity_window(chunk: CandidateChunk) -> Optional[str]:
+    if chunk.valid_from is None:
+        return None
+    start = chunk.valid_from.strftime("%Y-%m-%d")
+    if chunk.valid_to is None:
+        return f"valid from {start}"
+    return f"valid {start} → {chunk.valid_to.strftime('%Y-%m-%d')}"

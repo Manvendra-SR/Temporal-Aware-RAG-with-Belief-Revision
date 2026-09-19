@@ -46,12 +46,16 @@ from sqlalchemy.orm import Session
 
 from models import Chunk, Document
 from services import bm25_store, embedder, faiss_store
+from services.version_resolver import lineage_roots
 
 log = logging.getLogger(__name__)
 
 RRF_K = 60          # constant in the RRF formula — standard value
-BM25_FETCH = 50     # how many BM25 candidates to pull
-DENSE_FETCH = 50    # how many dense candidates to pull
+BM25_FETCH = 50     # minimum number of BM25 candidates to pull
+DENSE_FETCH = 50    # minimum number of dense candidates to pull
+# Each retriever pulls max(minimum, k), so a caller that over-fetches (the
+# query endpoint asks for 3× the final count before temporal filtering) gets a
+# correspondingly larger pool rather than being capped at 50 per retriever.
 
 
 @dataclass
@@ -75,6 +79,10 @@ class CandidateChunk:
     version_string: str | None = None
     published_at: datetime | None = None
     is_latest: bool = True
+    # Root document of this chunk's version lineage (its own doc_id when the
+    # document has no parent). Two chunks share a lineage_id exactly when one
+    # document is a version of the other.
+    lineage_id: str = ""
 
     # ── Scores computed by temporal_reranker (None until reranked) ───────────
     temporal_score: float | None = None
@@ -100,14 +108,16 @@ def hybrid_retrieve(
         List of CandidateChunk sorted descending by rrf_score.
     """
     # ── 1. BM25 search ──────────────────────────────────────────────────────
-    bm25_results: list[tuple[str, float]] = bm25_store.search(query, k=BM25_FETCH)
+    bm25_fetch = max(BM25_FETCH, k)
+    dense_fetch = max(DENSE_FETCH, k)
+    bm25_results: list[tuple[str, float]] = bm25_store.search(query, k=bm25_fetch)
     # {chunk_id: (bm25_rank, bm25_score)}
     bm25_rank: dict[str, int] = {cid: rank for rank, (cid, _) in enumerate(bm25_results)}
     bm25_score_map: dict[str, float] = {cid: score for cid, score in bm25_results}
 
     # ── 2. Dense search ─────────────────────────────────────────────────────
     query_vec = embedder.embed([query])[0]  # shape (384,)
-    dense_ids, dense_dists = faiss_store.search(query_vec, k=DENSE_FETCH)
+    dense_ids, dense_dists = faiss_store.search(query_vec, k=dense_fetch)
     # Convert FAISS integer IDs → chunk_ids via DB
     faiss_id_to_chunk_id: dict[int, str] = {}
     if dense_ids:
@@ -130,8 +140,8 @@ def hybrid_retrieve(
     all_chunk_ids = set(bm25_rank) | set(dense_rank)
     rrf_scores: dict[str, float] = {}
     for cid in all_chunk_ids:
-        r_bm25 = bm25_rank.get(cid, BM25_FETCH)    # missing → worst rank
-        r_dense = dense_rank.get(cid, DENSE_FETCH)
+        r_bm25 = bm25_rank.get(cid, bm25_fetch)    # missing → worst rank
+        r_dense = dense_rank.get(cid, dense_fetch)
         rrf_scores[cid] = 1.0 / (RRF_K + r_bm25) + 1.0 / (RRF_K + r_dense)
 
     # Sort by RRF score descending, keep top candidates for DB fetch
@@ -148,6 +158,8 @@ def hybrid_retrieve(
         .filter(Chunk.chunk_id.in_(top_candidates))
         .all()
     )
+
+    roots = lineage_roots(db, {doc_row.doc_id for _, doc_row in rows})
 
     results: list[CandidateChunk] = []
     for chunk_row, doc_row in rows:
@@ -171,6 +183,7 @@ def hybrid_retrieve(
             version_string=doc_row.version_string,
             published_at=doc_row.published_at,
             is_latest=bool(doc_row.is_latest),
+            lineage_id=roots.get(doc_row.doc_id, doc_row.doc_id),
         ))
 
     # Sort final list by rrf_score descending, take top-k
@@ -180,7 +193,7 @@ def hybrid_retrieve(
     # Normalise fused relevance across the returned set so the reranker has a
     # relevance term that actually spans [0, 1]. Done after truncation so the
     # scale reflects the candidates the user is shown.
-    _assign_relevance_scores(results)
+    assign_relevance_scores(results)
 
     # The DB fetch can return fewer rows than requested when the FAISS/BM25
     # indexes contain entries whose chunks no longer exist in Postgres. Surface
@@ -218,13 +231,16 @@ def cosine_from_sq_l2(sq_distance: float | None) -> float:
     return round(max(0.0, min(1.0, cosine)), 4)
 
 
-def _assign_relevance_scores(candidates: list[CandidateChunk]) -> None:
+def assign_relevance_scores(candidates: list[CandidateChunk]) -> None:
     """
     Min-max normalise rrf_score across `candidates` into `relevance_score`.
 
     RRF values are tiny (≤ 2/61) and clustered, so they are unusable as a
     weighted term or as a UI bar in raw form. Normalising per query gives a
     well-spread [0, 1] relevance signal. Mutates the candidates in place.
+
+    The temporal reranker calls this again after filtering, so the scale is
+    always relative to the candidates that are actually being ranked.
 
     With a single candidate, or when every candidate ties, everything scores
     1.0 — there is no meaningful spread to express.
