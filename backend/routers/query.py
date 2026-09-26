@@ -28,7 +28,6 @@ from services.temporal_reranker import (
     describe_filter,
     describe_time_frame,
     rerank as temporal_rerank,
-    scoring_label,
 )
 
 log = logging.getLogger(__name__)
@@ -72,8 +71,7 @@ class SourceResult(BaseModel):
       semantic_score   cosine similarity, [0, 1]
       rrf_score        rank-fusion score, ≤ 2/61 — comparable only within a query
       relevance_score  rrf_score normalised across this query's results, [0, 1]
-      temporal_score   freshness weight 2^(-age/half_life), [0, 1]
-      composite_score  final reranking score, [0, 1]
+                       — the score the results are ranked by
     """
     chunk_id: str
     doc_title: str
@@ -86,16 +84,17 @@ class SourceResult(BaseModel):
     rrf_score: float
     relevance_score: float
 
-    # Temporal metadata + scores (null when temporal stages were skipped)
+    # Temporal metadata: the chunk's validity window and where it sits in its
+    # document's version history. Used as a filter, and shown on the source
+    # card — never as a ranking term.
     version_string: Optional[str] = None
+    # Start of the validity window (the document's publication date).
     published_at: Optional[str] = None
-    # End of the chunk's validity window (the date a newer version superseded
-    # it); null while the chunk is still current.
+    # End of the validity window (the date a newer version superseded it);
+    # null while the chunk is still current.
     valid_to: Optional[str] = None
     is_latest: Optional[bool] = None
     is_superseded: bool = False
-    temporal_score: Optional[float] = None
-    composite_score: Optional[float] = None
 
     # Conflict / belief-revision outcome
     has_conflict: bool = False
@@ -119,14 +118,12 @@ class ConflictInfo(BaseModel):
 
 class QueryAnalysisInfo(BaseModel):
     """How the system interpreted the question, surfaced so the UI can show it."""
-    # "current" | "point_in_time" | "range" | "version" | "historical" | "atemporal"
+    # "current" | "point_in_time" | "range" | "version" | "historical"
     intent: str = "current"
     as_of: Optional[str] = None           # YYYY-MM-DD, point_in_time only
     start_date: Optional[str] = None      # YYYY-MM-DD, range only (inclusive)
     end_date: Optional[str] = None        # YYYY-MM-DD, range only (inclusive)
-    version_hint: Optional[str] = None
-    temporal_qualifier: bool = False
-    wants_historical_sources: bool = False
+    version_hint: Optional[str] = None    # version only
     # "llm" = interpreted by the LLM; "default" = LLM unavailable or its output
     # failed validation, so the question was treated as "current";
     # "skipped" = baseline mode, where no temporal stage reads the analysis.
@@ -144,9 +141,7 @@ def _analysis_info(analysis: QueryAnalysis, source: str | None = None) -> QueryA
         as_of=_iso(analysis.as_of),
         start_date=_iso(analysis.start_date),
         end_date=_iso(analysis.end_date),
-        version_hint=analysis.version_hint,
-        temporal_qualifier=analysis.temporal_qualifier,
-        wants_historical_sources=analysis.wants_historical_sources,
+        version_hint=analysis.version,
         source=source or analysis.source,
         error=analysis.error,
     )
@@ -155,7 +150,6 @@ def _analysis_info(analysis: QueryAnalysis, source: str | None = None) -> QueryA
 class TemporalFilterInfo(BaseModel):
     """What the temporal filter did, so the UI and evaluation can see it."""
     rule: str                     # e.g. "valid on 2024-03-31"
-    scoring: str                  # "relevance + recency" | "relevance only"
     candidates_retrieved: int     # before filtering (over-fetched pool)
     candidates_valid: int         # passed the filter
     candidates_kept: int          # after truncation to max_chunks
@@ -167,7 +161,6 @@ class QueryResponse(BaseModel):
     latency_ms: int
     sources: list[SourceResult]
     # How the query was interpreted
-    version_hint: Optional[str] = None
     analysis: QueryAnalysisInfo = QueryAnalysisInfo()
     # True when the temporal pipeline ran (false for the baseline comparison)
     temporal_pipeline_applied: bool = True
@@ -240,7 +233,6 @@ def query_endpoint(
         candidates = candidates[: req.max_chunks]
         temporal_filter = TemporalFilterInfo(
             rule=describe_filter(analysis, datetime.now(timezone.utc).date()),
-            scoring=scoring_label(analysis),
             candidates_retrieved=retrieved,
             candidates_valid=valid,
             candidates_kept=len(candidates),
@@ -254,7 +246,6 @@ def query_endpoint(
             answer=None,
             latency_ms=latency_ms,
             sources=[],
-            version_hint=analysis.version_hint,
             analysis=analysis_info,
             temporal_pipeline_applied=temporal_enabled,
             temporal_filter=temporal_filter,
@@ -323,16 +314,12 @@ def query_endpoint(
             semantic_score=c.semantic_score,
             rrf_score=c.rrf_score,
             relevance_score=c.relevance_score,
-            # Temporal metadata + scores
+            # Temporal metadata (the validity window, as days)
             version_string=c.version_string,
-            published_at=(
-                c.published_at.strftime("%Y-%m-%d") if c.published_at else None
-            ),
+            published_at=c.valid_from.strftime("%Y-%m-%d") if c.valid_from else None,
             valid_to=c.valid_to.strftime("%Y-%m-%d") if c.valid_to else None,
             is_latest=c.is_latest,
             is_superseded=c.is_superseded,
-            temporal_score=c.temporal_score,
-            composite_score=c.composite_score,
             # Conflict / belief-revision outcome
             has_conflict=(c.chunk_id in conflicted_ids),
             used_in_answer=(c.chunk_id in used_in_answer),
@@ -349,7 +336,6 @@ def query_endpoint(
         answer=answer,
         latency_ms=latency_ms,
         sources=sources,
-        version_hint=analysis.version_hint,
         analysis=analysis_info,
         temporal_pipeline_applied=temporal_enabled,
         temporal_filter=temporal_filter,

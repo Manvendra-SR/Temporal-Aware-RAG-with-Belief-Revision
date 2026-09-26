@@ -144,11 +144,6 @@ class Chunk(Base):
         DateTime(timezone=True), nullable=True
     )
     is_superseded: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    superseded_by: Mapped[str | None] = mapped_column(
-        UUID(as_uuid=False),
-        ForeignKey("chunks.chunk_id", ondelete="SET NULL"),
-        nullable=True,
-    )
 
     ingested_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_now

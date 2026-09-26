@@ -31,9 +31,9 @@ rrf_score        Reciprocal Rank Fusion, sum of 1/(60 + rank) over the two
                  queries and definitely not a percentage.
 
 relevance_score  rrf_score min-max normalised across this query's candidates,
-                 so the best candidate is 1.0 and the worst is 0.0. This is the
-                 term the temporal reranker combines with temporal decay, and
-                 it is the only relevance number safe to render as a bar.
+                 so the best candidate is 1.0 and the worst is 0.0. This is
+                 what the temporal reranker ranks by, and the only relevance
+                 number safe to render as a bar.
 """
 
 from __future__ import annotations
@@ -61,7 +61,6 @@ DENSE_FETCH = 50    # minimum number of dense candidates to pull
 @dataclass
 class CandidateChunk:
     chunk_id: str
-    faiss_id: int
     doc_id: str
     doc_title: str
     content: str
@@ -73,22 +72,17 @@ class CandidateChunk:
     relevance_score: float = 0.0   # rrf_score normalised to [0, 1] per query
 
     # ── Temporal metadata (populated from the DB join) ───────────────────────
+    # valid_from is the document's publication date; valid_to is the date the
+    # next version superseded it (None while this one is still in force).
     valid_from: datetime | None = None
     valid_to: datetime | None = None
     is_superseded: bool = False
     version_string: str | None = None
-    published_at: datetime | None = None
     is_latest: bool = True
     # Root document of this chunk's version lineage (its own doc_id when the
     # document has no parent). Two chunks share a lineage_id exactly when one
     # document is a version of the other.
     lineage_id: str = ""
-
-    # ── Scores computed by temporal_reranker (None until reranked) ───────────
-    temporal_score: float | None = None
-    version_boost: float | None = None
-    latest_bonus: float | None = None
-    composite_score: float | None = None
 
 
 def hybrid_retrieve(
@@ -167,7 +161,6 @@ def hybrid_retrieve(
 
         results.append(CandidateChunk(
             chunk_id=cid,
-            faiss_id=chunk_row.faiss_index_id or -1,
             doc_id=doc_row.doc_id,
             doc_title=doc_row.title,
             content=chunk_row.content,
@@ -181,7 +174,6 @@ def hybrid_retrieve(
             valid_to=chunk_row.valid_to,
             is_superseded=bool(chunk_row.is_superseded),
             version_string=doc_row.version_string,
-            published_at=doc_row.published_at,
             is_latest=bool(doc_row.is_latest),
             lineage_id=roots.get(doc_row.doc_id, doc_row.doc_id),
         ))
@@ -235,9 +227,9 @@ def assign_relevance_scores(candidates: list[CandidateChunk]) -> None:
     """
     Min-max normalise rrf_score across `candidates` into `relevance_score`.
 
-    RRF values are tiny (≤ 2/61) and clustered, so they are unusable as a
-    weighted term or as a UI bar in raw form. Normalising per query gives a
-    well-spread [0, 1] relevance signal. Mutates the candidates in place.
+    RRF values are tiny (≤ 2/61) and clustered, so they are unusable as a UI
+    bar in raw form. Normalising per query gives a well-spread [0, 1] relevance
+    signal. Mutates the candidates in place.
 
     The temporal reranker calls this again after filtering, so the scale is
     always relative to the candidates that are actually being ranked.

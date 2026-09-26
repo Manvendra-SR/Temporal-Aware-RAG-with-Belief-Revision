@@ -4,6 +4,10 @@ Run the versioned-policy question set through the RAG pipeline twice — with
 temporal reasoning (no_temporal=false) and without it (no_temporal=true) — and
 compare both against the ground truth in evaluation/questions.json.
 
+Twelve questions, covering every temporal intent the system implements (current,
+point_in_time, range, version, historical). It is deliberately small: each
+question costs three LLM calls per arm on a free Groq key.
+
     python evaluation/run_eval.py [--url http://localhost:8000] [--show-failures]
 
 Both runs use the same retrieval stack, the same answer model and the same
@@ -29,7 +33,8 @@ import httpx
 HERE = Path(__file__).resolve().parent
 BACKEND_DIR = HERE.parent / "backend"
 
-TYPE_ORDER = ["current", "point_in_time", "historical", "conflict", "stable"]
+# The temporal intents the system implements — also the `type` of each question.
+TYPE_ORDER = ["current", "point_in_time", "range", "version", "historical"]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -174,18 +179,19 @@ def print_report(results: list[dict], n_fallback: int, n_errors: int) -> dict:
     temporal = sum(r["temporal"]["correct"] for r in results)
     diff = pct(temporal, n) - pct(normal, n)
 
-    print("\n" + "=" * 52)
-    print(f"Normal RAG:   {normal}/{n} ({pct(normal, n):.1f}%)")
-    print(f"Temporal RAG: {temporal}/{n} ({pct(temporal, n):.1f}%)")
+    print("\n" + "=" * 62)
+    print(f"Questions:    {n}")
+    print(f"Normal RAG:   {normal} correct, {n - normal} incorrect   accuracy {pct(normal, n):.1f}%")
+    print(f"Temporal RAG: {temporal} correct, {n - temporal} incorrect   accuracy {pct(temporal, n):.1f}%")
     print(f"Improvement:  {diff:+.1f} percentage points")
-    print("=" * 52)
+    print("=" * 62)
 
     fixed = [r["id"] for r in results if r["temporal"]["correct"] and not r["normal"]["correct"]]
     lost = [r["id"] for r in results if r["normal"]["correct"] and not r["temporal"]["correct"]]
     print(f"\nTemporal answered correctly where normal did not: {len(fixed)}  {fixed}")
     print(f"Normal answered correctly where temporal did not: {len(lost)}  {lost}")
 
-    print(f"\n{'type':<15}{'n':>3}   {'Normal':>8}   {'Temporal':>8}")
+    print(f"\nPer intent\n{'intent':<15}{'n':>3}   {'Normal':>8}   {'Temporal':>8}")
     for t in TYPE_ORDER:
         rows = [r for r in results if r["type"] == t]
         if rows:

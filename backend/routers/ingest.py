@@ -27,7 +27,7 @@ from models import Chunk, Document
 from services import bm25_store, embedder, faiss_store
 from services.chunker import chunk as do_chunk
 from services.parser import parse, ParseResult
-from services.version_resolver import resolve as resolve_lineage, version_sort_key
+from services.version_resolver import apply_lineage, validate_lineage, version_sort_key
 
 log = logging.getLogger(__name__)
 
@@ -156,18 +156,30 @@ async def ingest_document(
     """
     Full ingestion pipeline:
         1. Validate version_string and published_at formats
-        2. Read file bytes and SHA-256 duplicate check
-        3. Parse → text + headings
-        4. Chunk → ChunkData list
-        5. Embed all chunks
-        6. Write Document + Chunks to PostgreSQL
-        7. Resolve version lineage (explicit via parent_doc_id)
-        8. COMMIT, then add vectors to the FAISS + BM25 indexes
+        2. Validate the lineage (parent exists, is latest, version and date
+           increase) — read-only, before any expensive work
+        3. Read file bytes and SHA-256 duplicate check
+        4. Parse → text + headings
+        5. Chunk → ChunkData list
+        6. Embed all chunks
+        7. Write Document + Chunks to PostgreSQL
+        8. Apply the lineage mutation (supersede the parent), re-checking the
+           same guards under the parent's row lock
+        9. COMMIT, then add vectors to the FAISS + BM25 indexes
 
-    Ordering note: the indexes are written LAST, after the database commit.
-    They used to be written first, which meant any failure in steps 6-7 — most
-    commonly the lineage guard rejecting an out-of-order version with a 422 —
-    rolled back the database but left the chunks permanently in FAISS and BM25.
+    Ordering note (lineage): the guards in step 2 need only the submitted
+    metadata and the parent row, never the new document, so they can run
+    before parsing, chunking and embedding instead of after — a rejected
+    version no longer costs that work. Step 8 remains authoritative: the early
+    check can be invalidated by a concurrent ingest of another version of the
+    same parent, so the guards run again inside the transaction while holding
+    the parent's row lock.
+
+    Ordering note (indexes): the indexes are written LAST, after the database commit.
+    They used to be written first, which meant any failure in steps 7-8 — such
+    as the lineage re-check rejecting a version a concurrent ingest just
+    overtook — rolled back the database but left the chunks permanently in
+    FAISS and BM25.
     Those orphans are then retrieved but cannot be resolved back to a row, so
     they silently shrink every future result set. Postgres is the source of
     truth and the indexes are derivable from it (scripts/rebuild_indexes.py),
@@ -178,7 +190,18 @@ async def ingest_document(
     version_string = _validate_version(version_string)
     published_at_dt = _validate_date(published_at)
 
-    # ── 2. Read file + duplicate check ───────────────────────────────────────
+    # ── 2. Validate lineage (read-only, before any expensive work) ───────────
+    try:
+        validate_lineage(
+            parent_doc_id=parent_doc_id,
+            new_version=version_string,
+            new_date=published_at_dt,
+            db=db,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    # ── 3. Read file + duplicate check ───────────────────────────────────────
     file_bytes = await file.read()
     filename = file.filename or "upload"
 
@@ -190,7 +213,7 @@ async def ingest_document(
             detail=f"Duplicate file: already ingested as doc_id={existing.doc_id!r}",
         )
 
-    # ── 3. Parse ────────────────────────────────────────────────────────────
+    # ── 4. Parse ────────────────────────────────────────────────────────────
     try:
         parsed: ParseResult = parse(file_bytes, filename)
     except ValueError as exc:
@@ -198,14 +221,14 @@ async def ingest_document(
 
     log.info("Parsed '%s': %d chars, %d headings.", filename, len(parsed.text), len(parsed.headings))
 
-    # ── 4. Chunk ────────────────────────────────────────────────────────────
+    # ── 5. Chunk ────────────────────────────────────────────────────────────
     chunks = do_chunk(parsed.text, parsed.headings, embedder=embedder)
     if not chunks:
         raise HTTPException(status_code=422, detail="No text content could be extracted from the file.")
 
     log.info("Chunked into %d chunks.", len(chunks))
 
-    # ── 5. Embed ────────────────────────────────────────────────────────────
+    # ── 6. Embed ────────────────────────────────────────────────────────────
     vectors = embedder.embed([c.content for c in chunks])  # (N, 384)
 
     # Reserve FAISS ids and chunk UUIDs. next_id() only advances an in-memory
@@ -213,7 +236,7 @@ async def ingest_document(
     faiss_ids = [faiss_store.next_id() for _ in chunks]
     chunk_uuids = [str(uuid.uuid4()) for _ in chunks]
 
-    # ── 6. Write to PostgreSQL ──────────────────────────────────────────────
+    # ── 7. Write to PostgreSQL ──────────────────────────────────────────────
     now = datetime.now(timezone.utc)
     doc_id = str(uuid.uuid4())
 
@@ -225,7 +248,7 @@ async def ingest_document(
         ingested_at=now,
         version_string=version_string,
         published_at=published_at_dt,
-        is_latest=True,  # may be overridden by lineage resolver
+        is_latest=True,  # may be overridden by the lineage mutation
     )
     db.add(doc)
     db.flush()  # get doc_id into DB before adding chunks
@@ -248,11 +271,11 @@ async def ingest_document(
         ))
 
     db.bulk_save_objects(db_chunks)
-    # Don't commit yet — version resolver needs the session open
+    # Don't commit yet — the lineage mutation belongs in the same transaction
 
-    # ── 7. Resolve version lineage ──────────────────────────────────────────
+    # ── 8. Apply the lineage mutation (authoritative re-check) ──────────────
     try:
-        lineage = resolve_lineage(
+        lineage = apply_lineage(
             parent_doc_id=parent_doc_id,
             new_doc_id=doc_id,
             new_version=version_string,
@@ -268,7 +291,7 @@ async def ingest_document(
 
     db.commit()
 
-    # ── 8. Index (only now that the rows are durably committed) ─────────────
+    # ── 9. Index (only now that the rows are durably committed) ─────────────
     # If this fails the document exists but is not searchable — a recoverable
     # state, fixable with scripts/rebuild_indexes.py. The reverse ordering
     # would leave unreachable vectors that no rebuild can clean up.

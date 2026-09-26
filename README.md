@@ -18,16 +18,20 @@ Built with FastAPI, PostgreSQL, FAISS + BM25, a Hugging Face NLI model, Groq
 
 1. **Ingest.** Upload a document with a version and a date. When a new version
    is added, the old version's chunks get an end date. Every chunk therefore has
-   a validity window: `valid_from` to `valid_to`.
+   a validity window: `valid_from` to `valid_to`. A version that doesn't extend
+   its parent (unknown parent, already-superseded parent, a version or date that
+   doesn't move forward) is rejected up front, before the file is parsed,
+   chunked and embedded.
 2. **Understand the question.** One LLM call reads the question and returns its
    time intent as JSON (table below). The LLM only interprets the question; it
    never chooses which chunks to use.
 3. **Retrieve.** Hybrid search: BM25 keyword search + FAISS vector search,
    merged with Reciprocal Rank Fusion. It fetches 3x the needed chunks because
    the next step throws many away.
-4. **Filter and rank.** Plain code keeps only the chunks valid for that intent.
-   Recency scoring is used only for "current" questions, so a question about
-   2023 isn't pulled toward the newest version.
+4. **Filter and rank.** Plain code keeps only the chunks valid for that intent,
+   then ranks the survivors by relevance alone. Time decides which passages may
+   answer; it never nudges the order, so a question about 2023 isn't pulled
+   toward the newest version.
 5. **Detect conflicts.** An NLI model checks whether retrieved chunks from
    different documents contradict each other. Two versions of the same document
    are labelled a *version change*; unrelated documents are a *contradiction*.
@@ -46,7 +50,10 @@ Built with FastAPI, PostgreSQL, FAISS + BM25, a Hugging Face NLI model, Groq
 | range | "Who was CEO during 2023?" | valid at any time in the range |
 | version | "According to v2.0, who was CEO?" | that version only |
 | historical | "Who used to be CEO?" | all versions |
-| atemporal | "What does the policy cover?" | valid today |
+
+A question whose answer doesn't depend on time ("what does the policy cover?")
+is a "current" question — the answer should come from the version in force
+today, which is what "current" already retrieves.
 
 If the LLM call fails or returns invalid output, the question is treated as
 "current", and the UI says so.
@@ -65,8 +72,6 @@ March 2023), v3.0 (Priya continues, from 2025).
 For the 2023 question the answer is "Rahul until March, then Priya". A normal
 RAG system would see all three versions with no dates and could not tell.
 
-More detail: [ARCHITECTURE_DEEP_DIVE.md](ARCHITECTURE_DEEP_DIVE.md).
-
 ---
 
 ## Project structure
@@ -78,7 +83,7 @@ backend/    FastAPI app
               belief_revision, version_resolver, context, llm, ...
   tests/      unit and end-to-end pipeline tests (no DB or network needed)
 frontend/   React + Vite: ingest, library, query and conflict-review pages
-evaluation/ benchmark: 5 policy versions, 30 questions, run script
+evaluation/ benchmark: 5 policy versions, 12 questions, run script
 ```
 
 ---
@@ -130,9 +135,10 @@ cd backend
 python -m pytest
 ```
 
-Covers version lineage, the analyzer's output validation, filtering for every
-intent, conflict handling, prompt building, and the full query endpoint with
-the search indexes, NLI model and LLMs faked.
+Covers version lineage (including that an invalid version is rejected before
+any parsing, chunking or embedding happens), the analyzer's output validation,
+filtering for every intent, conflict handling, prompt building, and the full
+query endpoint with the search indexes, NLI model and LLMs faked.
 
 ---
 
@@ -140,23 +146,34 @@ the search indexes, NLI model and LLMs faked.
 
 [`evaluation/`](evaluation/README.md) compares the full system against the same
 system with temporal reasoning turned off (`no_temporal=true`). It uses five
-versions of one policy document and 30 questions (current, point-in-time,
-historical, changed-value and never-changing). An LLM judge grades each answer
-against a reference answer.
+versions of one policy document and **12 questions — two or three for each of
+the five intents** (current, point-in-time, range, version, historical). An LLM
+judge grades each answer against a reference answer. The set is small on purpose:
+every question costs three LLM calls per arm on a free Groq API key.
 
-**Initial run:**
+**One run, 2026-09-25, against the current implementation:**
 
-| | Correct | Accuracy |
-|---|---|---|
-| Normal RAG (temporal off) | 9 / 30 | 30% |
-| Temporal RAG | 27 / 30 | 90% |
-| **Improvement** | | **+60 percentage points** |
+| | Correct | Incorrect | Accuracy |
+|---|---|---|---|
+| Normal RAG (temporal off) | 1 / 12 | 11 | 8.3% |
+| Temporal RAG | 11 / 12 | 1 | 91.7% |
 
-The gain comes from current and point-in-time questions, where normal RAG sees
-several near-identical versions with no dates and cannot tell which applies. On
-the questions whose answers never change, both systems scored 5/5. This is one
-run on one synthetic document with 30 questions, and answers vary a little
-between runs, so treat it as indicative, not exact.
+Per intent, temporal arm: current 3/3, point_in_time 2/2, range 2/2, version
+3/3, historical 1/2. Each question was answered from exactly the versions its
+reference answer comes from — v5.0 for "current", v2.0 for "on 2022-06-15",
+v1.0+v2.0 for "during 2022", the named version for "according to version 4.0",
+all five for "historical".
+
+The single miss was an analyzer fallback, not a retrieval error: the intent call
+returned `point_in_time` with no date, failed validation, and the question was
+answered as "current". Every wrong answer on the normal side is the same failure
+— it sees several near-identical versions with no dates and either picks one or
+refuses.
+
+This is **one run on one synthetic document with 12 questions**; a single
+question is worth 8.3 points. Treat it as indicative, not exact, and note that
+the baseline's low score partly reflects a question set in which every question
+discriminates between versions.
 
 It runs against its own database, so it never touches your documents. Setup
 steps are in [`evaluation/README.md`](evaluation/README.md).
@@ -172,8 +189,8 @@ steps are in [`evaluation/README.md`](evaluation/README.md).
 - Conflicts are only checked between different documents, among the top 20
   results.
 - No document deletion, no authentication (single local user).
-- The recency half-life (180 days, `TEMPORAL_HALF_LIFE_DAYS`) and the 90-day
-  rule in belief revision are fixed heuristics, not tuned values.
+- The 90-day publication gap that lets belief revision prefer one unrelated
+  source over another is a fixed heuristic, not a tuned value.
 
 ---
 

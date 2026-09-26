@@ -11,8 +11,8 @@ explained to it, and how confident the answer may claim to be.
 Invariant
 ---------
 Evidence is only ever EXCLUDED for questions about the present (intent
-"current" or "atemporal"). For every other intent the temporal filter has
-already restricted the candidates to the time window the question is about,
+"current"). For every other intent the temporal filter has already
+restricted the candidates to the time window the question is about,
 so a disagreement inside that window is something to explain, not something
 to delete — "who was CEO in 2023?" may legitimately need both the chunk that
 names Rahul and the one that names Priya.
@@ -65,8 +65,6 @@ log = logging.getLogger(__name__)
 # after the older one. Closer than that, publication order is too weak a signal
 # to discard either side. A fixed, documented heuristic — not a calibrated value.
 CONTRADICTION_RECENCY_GAP_DAYS = 90
-
-_PRESENT_INTENTS = frozenset({TemporalIntent.CURRENT, TemporalIntent.ATEMPORAL})
 
 
 @dataclass
@@ -197,7 +195,7 @@ def revise(
 
 
 def _is_about_present(query_analysis: QueryAnalysis | None) -> bool:
-    return query_analysis is None or query_analysis.intent in _PRESENT_INTENTS
+    return query_analysis is None or query_analysis.intent is TemporalIntent.CURRENT
 
 
 # ── Rules ─────────────────────────────────────────────────────────────────────

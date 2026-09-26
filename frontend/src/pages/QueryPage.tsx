@@ -26,8 +26,6 @@ interface SourceResult {
   valid_to: string | null
   is_latest: boolean | null
   is_superseded: boolean
-  temporal_score: number | null
-  composite_score: number | null
   has_conflict: boolean
   used_in_answer: boolean
   excluded_reason: string | null
@@ -41,7 +39,7 @@ interface ConflictInfo {
 }
 
 type TemporalIntent =
-  'current' | 'point_in_time' | 'range' | 'version' | 'historical' | 'atemporal'
+  'current' | 'point_in_time' | 'range' | 'version' | 'historical'
 
 interface QueryAnalysisInfo {
   intent: TemporalIntent
@@ -49,8 +47,6 @@ interface QueryAnalysisInfo {
   start_date: string | null
   end_date: string | null
   version_hint: string | null
-  temporal_qualifier: boolean
-  wants_historical_sources: boolean
   source: 'llm' | 'default' | 'skipped'
   error: string | null
 }
@@ -69,8 +65,6 @@ function describeAnalysis(a: QueryAnalysisInfo): string | null {
       return `a question about version ${a.version_hint}`
     case 'historical':
       return 'a question about the past'
-    case 'atemporal':
-      return 'a question that does not depend on time'
     default:
       return null
   }
@@ -78,7 +72,6 @@ function describeAnalysis(a: QueryAnalysisInfo): string | null {
 
 interface TemporalFilterInfo {
   rule: string
-  scoring: string
   candidates_retrieved: number
   candidates_valid: number
   candidates_kept: number
@@ -89,7 +82,6 @@ interface QueryResponse {
   answer: string | null
   latency_ms: number
   sources: SourceResult[]
-  version_hint: string | null
   analysis: QueryAnalysisInfo
   temporal_pipeline_applied: boolean
   temporal_filter: TemporalFilterInfo | null
@@ -112,14 +104,13 @@ function pct(value: number): string {
 /**
  * A one-sentence, plain-language explanation of why a source landed where it
  * did. The point is that a reader who has never seen the code can follow the
- * ranking without decoding the numeric bars.
+ * ranking without decoding the numeric bar.
  *
- * Age and version status are deliberately joined with "but" rather than being
- * listed side by side: a document can be both the current version AND old (no
- * newer release exists yet), and reading "is old — from the latest version" as
- * a flat list makes that sound self-contradictory.
+ * Only relevance decides the order. The version status is stated because it is
+ * why the source was eligible to answer at all, not because it moved the
+ * source up or down the list.
  */
-function explainRanking(source: SourceResult, temporalApplied: boolean): string {
+function explainRanking(source: SourceResult): string {
   const relevance =
     source.relevance_score >= 0.75 ? 'Closely matches the question' :
     source.relevance_score >= 0.35 ? 'Partially matches the question' :
@@ -130,23 +121,7 @@ function explainRanking(source: SourceResult, temporalApplied: boolean): string 
     source.is_latest ? 'from the current version' :
     null
 
-  if (!temporalApplied || source.temporal_score === null) {
-    return version ? `${relevance}, ${version}.` : `${relevance}.`
-  }
-
-  // Each age phrase carries its own verb so it composes cleanly in every case.
-  const age =
-    source.temporal_score >= 0.75 ? 'was published recently' :
-    source.temporal_score >= 0.35 ? 'is moderately dated' :
-    'has not been updated in a while'
-
-  if (!version) return `${relevance}; it ${age}.`
-
-  // For the current version, an old date means "nothing newer exists yet"
-  // rather than "this is stale", so it is introduced with "though".
-  const isOld = source.temporal_score < 0.35
-  const joiner = isOld && source.is_latest ? ', though it' : ', and it'
-  return `${relevance}, ${version}${joiner} ${age}.`
+  return version ? `${relevance}, ${version}.` : `${relevance}.`
 }
 
 // ── Confidence Badge ───────────────────────────────────────────────────────
@@ -194,7 +169,7 @@ function ScoreBar({ label, value, color, hint }: {
 
 // ── Source Card ────────────────────────────────────────────────────────────
 
-function SourceCard({ source, temporalApplied }: { source: SourceResult; temporalApplied: boolean }) {
+function SourceCard({ source }: { source: SourceResult }) {
   const [showDetail, setShowDetail] = useState(false)
   const [expanded, setExpanded] = useState(false)
 
@@ -287,34 +262,16 @@ function SourceCard({ source, temporalApplied }: { source: SourceResult; tempora
 
         {/* Plain-language ranking explanation */}
         <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-          {explainRanking(source, temporalApplied)}
+          {explainRanking(source)}
         </div>
 
-        {/* The two scores that are genuinely 0-1 and drive the ranking */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-          <ScoreBar
-            label="Relevance"
-            value={source.relevance_score}
-            color="var(--info)"
-            hint="How well this chunk matched the question, combining keyword and meaning search. Scaled relative to the other results for this query."
-          />
-          {temporalApplied && source.temporal_score !== null && (
-            <ScoreBar
-              label="Recency"
-              value={source.temporal_score}
-              color="#f97316"
-              hint="Freshness weight from the document's date. Halves for every half-life period of age."
-            />
-          )}
-          {temporalApplied && source.composite_score !== null && (
-            <ScoreBar
-              label="Final score"
-              value={source.composite_score}
-              color="#a855f7"
-              hint="The ranking score: relevance, recency, version match and latest-version bonus combined."
-            />
-          )}
-        </div>
+        {/* The one score that is genuinely 0-1 and decides the ranking */}
+        <ScoreBar
+          label="Relevance"
+          value={source.relevance_score}
+          color="var(--info)"
+          hint="How well this chunk matched the question, combining keyword and meaning search. Scaled relative to the other results for this query. Dates and versions decide which passages are eligible to answer, not how they are ranked."
+        />
 
         {/* Conflict flag */}
         {source.has_conflict && (
@@ -684,7 +641,7 @@ export default function QueryPage() {
                 <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
                   Only passages <strong>{result.temporal_filter.rule}</strong> were eligible:{' '}
                   {result.temporal_filter.candidates_valid} of {result.temporal_filter.candidates_retrieved}{' '}
-                  retrieved passages passed, ranked by {result.temporal_filter.scoring}.
+                  retrieved passages passed, and were ranked by relevance.
                 </div>
               )}
 
@@ -756,11 +713,7 @@ export default function QueryPage() {
                   {showSources && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                       {result.sources.map(src => (
-                        <SourceCard
-                          key={src.chunk_id}
-                          source={src}
-                          temporalApplied={result.temporal_pipeline_applied}
-                        />
+                        <SourceCard key={src.chunk_id} source={src} />
                       ))}
                     </div>
                   )}

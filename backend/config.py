@@ -2,8 +2,7 @@
 config.py — Application settings loaded from .env via Pydantic BaseSettings.
 All environment variables are read once at import time and cached.
 
-This module is the single source of truth for tunable runtime configuration,
-including the temporal decay half-life used by the reranker.
+This module is the single source of truth for tunable runtime configuration.
 """
 
 from pathlib import Path
@@ -63,19 +62,6 @@ class Settings(BaseSettings):
     # Set it (with DB_NAME) to run against a separate corpus — the evaluation in
     # evaluation/README.md does this so its documents never mix with yours.
     data_dir: str = ""
-
-    # ── Temporal decay ───────────────────────────────────────────────────────
-    # SINGLE SOURCE OF TRUTH for temporal decay. Every module that needs a
-    # half-life reads it from here (services/temporal_reranker.py).
-    #
-    # A chunk's temporal weight is 2 ** (-age_days / temporal_half_life_days),
-    # so a chunk exactly this many days old scores 0.5.
-    #
-    # This is deliberately a single GLOBAL value. The original design sketched a
-    # per-domain `domain_config` table; that was never implemented and the
-    # `domain` concept does not exist in the data model, so per-domain half-lives
-    # are not supported. See README "Temporal decay".
-    temporal_half_life_days: int = 180
 
     # App
     app_env: str = "development"

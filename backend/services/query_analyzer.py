@@ -21,7 +21,10 @@ Intents
     range          a period ("who was CEO in 2023?")  → start_date / end_date
     version        a named document version ("according to v2.0 …") → version
     historical     the past, with no specific date ("who used to be CEO?")
-    atemporal      not time-sensitive ("what does the leave policy cover?")
+
+A question whose answer does not depend on time at all ("what does the leave
+policy cover?") is a "current" question: the answer must come from the version
+in force today, which is exactly what "current" retrieves.
 
 Failure behaviour
 -----------------
@@ -65,16 +68,6 @@ class TemporalIntent(str, Enum):
     RANGE = "range"
     VERSION = "version"
     HISTORICAL = "historical"
-    ATEMPORAL = "atemporal"
-
-
-# Intents whose answer may legitimately live in superseded chunks.
-_HISTORICAL_INTENTS = frozenset({
-    TemporalIntent.POINT_IN_TIME,
-    TemporalIntent.RANGE,
-    TemporalIntent.VERSION,
-    TemporalIntent.HISTORICAL,
-})
 
 
 @dataclass(frozen=True)
@@ -98,26 +91,6 @@ class QueryAnalysis:
 
     error: Optional[str] = None
     """Why the LLM result is not available, when source == "default"."""
-
-    @property
-    def version_hint(self) -> Optional[str]:
-        """The pinned version, if any. Read by the reranker and belief revision."""
-        return self.version
-
-    @property
-    def temporal_qualifier(self) -> bool:
-        """True when the question is about the past (excluding version pins)."""
-        return self.intent in _HISTORICAL_INTENTS and self.intent is not TemporalIntent.VERSION
-
-    @property
-    def wants_historical_sources(self) -> bool:
-        """
-        True when superseded chunks should remain eligible for retrieval.
-
-        A question about a past date, a past period, a named version or "the
-        past" in general cannot be answered from the latest version alone.
-        """
-        return self.intent in _HISTORICAL_INTENTS
 
 
 # ── LLM output schema ───────────────────────────────────────────────────────
@@ -207,9 +180,9 @@ intent is one of:
     date, not a version.
 - "historical": about the past with no specific date or version.
     "Who used to be CEO?", "What was the original policy?"
-- "atemporal": the answer does not depend on time at all (definitions, how a
-    concept works). If the answer could change as documents are updated, use
-    "current" instead. When unsure between the two, choose "current".
+
+A question whose answer does not depend on time ("what does the leave policy
+cover?") is "current": it should be answered from what is in force today.
 
 Rules:
 - Dates are ISO "YYYY-MM-DD". Resolve relative expressions ("last year",

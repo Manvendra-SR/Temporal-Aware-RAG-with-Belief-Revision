@@ -1,20 +1,39 @@
 """
 services/version_resolver.py — Link newly ingested documents into a version lineage.
 
-resolve(parent_doc_id, new_doc_id, new_version, new_date, db) → LineageResult
+Two phases, deliberately separated:
 
-Algorithm:
-    1. If parent_doc_id is None → new lineage, mark new doc is_latest=True, done.
-    2. Load parent from DB. If not found → raise ValueError (caller returns 422).
-    3. Guards (each raises ValueError):
-         - the parent must be the latest version of its lineage
-         - new_version must be strictly greater than parent.version_string
-         - new_date must not be earlier than the parent's published_at
-    4. Walk the lineage from parent upward to mark ALL ancestors is_latest=False.
-    5. Stamp all active (non-superseded) chunks of older docs:
-         valid_to = new_date, is_superseded = True
-    6. Set new doc is_latest=True, parent_doc_id = parent.doc_id.
-    7. Return LineageResult.
+    validate_lineage(parent_doc_id, new_version, new_date, db)
+        Read-only. Checks everything that can be known before the new document
+        exists: the parent is there, it is the current version of its lineage,
+        the new version is strictly greater and the new date is not earlier.
+        Ingestion calls this immediately after metadata validation, so an
+        out-of-order version is rejected before the file is parsed, chunked and
+        embedded — work that would only be thrown away by the rollback.
+
+    apply_lineage(parent_doc_id, new_doc_id, new_version, new_date, db)
+        The authoritative phase, called inside the ingestion transaction after
+        the new document has been flushed. It re-loads the parent FOR UPDATE
+        and runs the same guards again before superseding it: is_latest=False,
+        and each of its chunks gets valid_to = new_date, is_superseded = True.
+
+Why the guards run twice
+------------------------
+The early check is an optimisation and cannot be authoritative: between it and
+the commit, a concurrent ingest may have superseded the same parent, which
+would leave two "latest" versions in one lineage. Re-running the guards while
+holding the parent's row lock closes that window — the second uploader's
+re-check sees is_latest=False and is rejected. Both phases call the same
+_check_guards(), so there is one implementation of the rules, run twice.
+
+Why only the parent is touched
+------------------------------
+The is_latest guard means the parent is always the one version of its lineage
+that is still current, so every older version was already superseded when *it*
+was replaced: those documents already have is_latest=False and their chunks
+already have a valid_to and is_superseded=True. Walking further up the chain
+would find nothing left to change. One lineage, one current version, one
+document to update.
 
 Why the guards matter
 ---------------------
@@ -28,7 +47,8 @@ the parent a window that ends before it starts.
 lineage_roots(db, doc_ids) → {doc_id: root_doc_id}
     Identifies which lineage each document belongs to. The conflict detector
     uses it to tell a genuine version supersession (same lineage) from a
-    contradiction between unrelated documents.
+    contradiction between unrelated documents. This one *does* walk the whole
+    chain, because a lineage's identity is its root, however deep it is.
 """
 
 from __future__ import annotations
@@ -63,9 +83,10 @@ class LineageResult:
 # Version comparison — the single ordering policy for the whole application
 # ---------------------------------------------------------------------------
 #
-# Every module that needs to order versions (lineage resolution, the /lineage
-# endpoint, the reranker's version matching) MUST use version_sort_key() /
-# is_version_greater() from this module. Do not re-implement version parsing.
+# Every module that needs to order or match versions (lineage resolution, the
+# /lineage endpoint, the reranker's version filter) MUST use version_sort_key(),
+# is_version_greater() or version_matches() from this module. Do not
+# re-implement version parsing anywhere else.
 #
 # Policy
 # ------
@@ -75,8 +96,9 @@ class LineageResult:
 #   insignificant. This makes the following hold:
 #       "2.2" == "2.2.0" == "2.2.0.0"      "1" == "1.0"
 # * Components compare numerically, not lexically, so "2.10" > "2.9".
-# * A missing or unparseable version sorts BELOW every real version, and is
-#   never considered greater than anything (see is_version_greater).
+# * A missing or unparseable version sorts BELOW every real version, is never
+#   considered greater than anything (is_version_greater) and never matches
+#   anything (version_matches).
 #
 # Note: because components are compared positionally, a date-style version
 # ("2024-03-01") and a semver-style version ("2.2") are not meaningfully
@@ -129,12 +151,53 @@ def is_version_greater(a: Optional[str], b: Optional[str]) -> bool:
     return key_a > version_sort_key(b)
 
 
+def version_matches(chunk_version: Optional[str], requested: Optional[str]) -> bool:
+    """
+    Return True if `chunk_version` names the same release as `requested`.
+
+    The same policy as the ordering above, so "2", "2.0" and "2.0.0" all name
+    one release, while "2.1" and "2.10" do not — they are different numbers,
+    and matching them as strings would serve v2.10 to someone who asked for
+    v2.1. A missing or unparseable version on either side matches nothing: the
+    version someone asked for has to be a version.
+
+    This is the filter for `version` questions ("according to v2.0, …").
+    """
+    key = version_sort_key(requested)
+    return key[0] == 1 and version_sort_key(chunk_version) == key
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
 
-def resolve(
+def validate_lineage(
+    parent_doc_id: Optional[str],
+    new_version: str,
+    new_date: datetime,
+    db: Session,
+) -> None:
+    """
+    Read-only lineage guard, safe to call before the new document exists.
+
+    Called at the very start of ingestion, right after the metadata format
+    checks, so that a bad parent, a non-increasing version or a backdated
+    publication date is rejected before the file is parsed, chunked and
+    embedded. Nothing here writes, so there is nothing to roll back.
+
+    This is NOT authoritative: apply_lineage() re-runs the same guards under a
+    row lock inside the transaction. See the module docstring.
+
+    Raises:
+        ValueError: If parent_doc_id does not exist, or any guard fails.
+    """
+    if parent_doc_id is None:
+        return
+    _check_guards(_load_parent(db, parent_doc_id, lock=False), new_version, new_date)
+
+
+def apply_lineage(
     parent_doc_id: Optional[str],
     new_doc_id: str,
     new_version: str,
@@ -142,10 +205,14 @@ def resolve(
     db: Session,
 ) -> LineageResult:
     """
-    Resolve version lineage for the newly created document.
+    Supersede the parent and report how the new document joins its lineage.
 
     IMPORTANT: Call this *after* the new Document row has been flushed to DB
     (so it's visible to the session) but *before* committing.
+
+    The parent is re-loaded FOR UPDATE and re-checked here, because the early
+    validate_lineage() call may have been overtaken by a concurrent ingest of
+    another version of the same document.
 
     Args:
         parent_doc_id: The UUID of the explicit parent document, or None for
@@ -159,8 +226,8 @@ def resolve(
         LineageResult with lineage details.
 
     Raises:
-        ValueError: If parent_doc_id does not exist in the DB, or if
-                    new_version is not strictly greater than the parent's version.
+        ValueError: If parent_doc_id does not exist in the DB, or if any of the
+                    three chain guards fails.
     """
     # ── Case 1: Brand-new lineage ────────────────────────────────────────────
     if parent_doc_id is None:
@@ -173,11 +240,79 @@ def resolve(
         )
 
     # ── Case 2: New version of an existing document ──────────────────────────
-    parent = db.query(Document).filter(Document.doc_id == parent_doc_id).first()
+    parent = _load_parent(db, parent_doc_id, lock=True)
+    _check_guards(parent, new_version, new_date)
+
+    log.info(
+        "Linking doc %s (v%s) as child of %s (v%s)",
+        new_doc_id[:8], new_version,
+        parent_doc_id[:8], parent.version_string,
+    )
+
+    # ── Supersede the parent ─────────────────────────────────────────────────
+    parent.is_latest = False
+
+    stamped = (
+        db.query(Chunk)
+        .filter(
+            Chunk.doc_id == parent.doc_id,
+            Chunk.is_superseded == False,  # noqa: E712
+        )
+        .all()
+    )
+    for ch in stamped:
+        ch.valid_to = new_date
+        ch.is_superseded = True
+
+    superseded_chunk_count = len(stamped)
+    log.info(
+        "Superseded doc %s (v%s) and its %d chunks",
+        parent.doc_id[:8], parent.version_string, superseded_chunk_count,
+    )
+
+    # ── Build lineage message ─────────────────────────────────────────────────
+    parts = []
+    if parent.version_string:
+        parts.append(f"Supersedes v{parent.version_string}")
+    if superseded_chunk_count:
+        parts.append(f"{superseded_chunk_count} chunks marked expired")
+    lineage_message = ". ".join(parts) + "." if parts else "Linked to lineage."
+
+    return LineageResult(
+        parent_doc_id=parent_doc_id,
+        superseded_chunk_count=superseded_chunk_count,
+        is_new_lineage=False,
+        lineage_message=lineage_message,
+    )
+
+
+# ---------------------------------------------------------------------------
+# The guards themselves — one implementation, run by both phases
+# ---------------------------------------------------------------------------
+
+
+def _load_parent(db: Session, parent_doc_id: str, *, lock: bool) -> Document:
+    """
+    Load the parent document, or raise ValueError if there is no such row.
+
+    `lock=True` takes a row lock (SELECT ... FOR UPDATE) so that the guards and
+    the supersession that follows them are atomic against a concurrent ingest
+    of another version of the same document.
+    """
+    query = db.query(Document).filter(Document.doc_id == parent_doc_id)
+    if lock:
+        query = query.with_for_update()
+    parent = query.first()
     if parent is None:
         raise ValueError(f"parent_doc_id '{parent_doc_id}' not found in the database.")
+    return parent
 
+
+def _check_guards(parent: Document, new_version: str, new_date: datetime) -> None:
+    """Raise ValueError unless the new version may extend `parent`'s lineage."""
     # Chain guard — a lineage must stay linear (see "Why the guards matter").
+    # It is also what makes the parent the only document to update: every
+    # earlier version was superseded when it was itself replaced.
     if not parent.is_latest:
         raise ValueError(
             f"Document '{parent.title}' v{parent.version_string} is not the latest "
@@ -202,69 +337,6 @@ def resolve(
             f"earlier than the parent version's "
             f"({parent.published_at.date().isoformat()})."
         )
-
-    log.info(
-        "Linking doc %s (v%s) as child of %s (v%s)",
-        new_doc_id[:8], new_version,
-        parent_doc_id[:8], parent.version_string,
-    )
-
-    # ── Walk the full ancestor chain, marking all as not-latest ─────────────
-    # We walk up from parent to root to collect all ancestors, then mark them.
-    ancestors: list[Document] = []
-    current = parent
-    visited: set[str] = set()
-    while current is not None and current.doc_id not in visited:
-        visited.add(current.doc_id)
-        ancestors.append(current)
-        if current.parent_doc_id:
-            current = db.query(Document).filter(Document.doc_id == current.parent_doc_id).first()
-        else:
-            break
-
-    superseded_chunk_count = 0
-
-    for ancestor in ancestors:
-        if ancestor.is_latest:
-            ancestor.is_latest = False
-            log.info(
-                "Marked doc %s (v%s) is_latest=False",
-                ancestor.doc_id[:8], ancestor.version_string,
-            )
-
-        # Stamp all active chunks of this ancestor
-        chunks_to_stamp = (
-            db.query(Chunk)
-            .filter(
-                Chunk.doc_id == ancestor.doc_id,
-                Chunk.is_superseded == False,  # noqa: E712
-            )
-            .all()
-        )
-        for ch in chunks_to_stamp:
-            ch.valid_to = new_date
-            ch.is_superseded = True
-            superseded_chunk_count += 1
-
-    log.info(
-        "Superseded %d chunks across %d ancestor docs",
-        superseded_chunk_count, len(ancestors),
-    )
-
-    # ── Build lineage message ─────────────────────────────────────────────────
-    parts = []
-    if parent.version_string:
-        parts.append(f"Supersedes v{parent.version_string}")
-    if superseded_chunk_count:
-        parts.append(f"{superseded_chunk_count} chunks marked expired")
-    lineage_message = ". ".join(parts) + "." if parts else "Linked to lineage."
-
-    return LineageResult(
-        parent_doc_id=parent_doc_id,
-        superseded_chunk_count=superseded_chunk_count,
-        is_new_lineage=False,
-        lineage_message=lineage_message,
-    )
 
 
 def lineage_roots(db: Session, doc_ids: Iterable[str]) -> dict[str, str]:
