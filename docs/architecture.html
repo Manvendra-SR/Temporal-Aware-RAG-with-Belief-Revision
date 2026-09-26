@@ -616,6 +616,7 @@
   <button class="flowtab" data-flow="baseline_query" aria-pressed="false"><span class="num">2</span> Baseline Query (Compare mode)</button>
   <button class="flowtab" data-flow="ingest" aria-pressed="false"><span class="num">3</span> Ingest Document (POST /ingest)</button>
   <button class="flowtab" data-flow="resolve_conflict" aria-pressed="false"><span class="num">4</span> Resolve Conflict</button>
+  <button class="flowtab" data-flow="delete_document" aria-pressed="false"><span class="num">5</span> Delete Document (DELETE /documents/{id})</button>
 </nav>
 
 <p class="scenario-note">Shortcuts: <kbd>Space</kbd> play/pause · <kbd>&larr;</kbd>/<kbd>&rarr;</kbd> step · <kbd>1</kbd>&ndash;<kbd id="kbFlowMax">4</kbd> flow · <kbd>T</kbd> theme · <kbd>F</kbd> fullscreen · <kbd>R</kbd> reset layout · Drag nodes to reposition</p>
@@ -696,7 +697,7 @@
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></svg>
         </div>
         <div class="label">Hybrid Index</div>
-        <div class="tech">FAISS HNSW (dense) +<br/>BM25Okapi (keyword)</div>
+        <div class="tech">FAISS IndexFlatIP (dense) +<br/>BM25Okapi (keyword)</div>
         <div class="port">data/faiss.index · data/bm25.pkl</div>
         <span class="step-badge">·</span>
       </div>
@@ -1162,6 +1163,79 @@ WHERE conflict_id='c-77e2'`,
         payload:
 `{ "conflict_id": "c-77e2", "is_resolved": true }`,
         chips:["reflected in analytics"]
+      }
+    ]
+  },
+
+  delete_document: {
+    name: "Delete Document (DELETE /documents/{id})",
+    note: "Only the current version of a lineage can be deleted — anything older has a next version depending on it. Deleting it hands 'latest' back to its parent, and its vectors and BM25 entries are removed for real.",
+    steps: [
+      {
+        from:"user", to:"orch", color:"--c-user",
+        title:"Delete requested",
+        route:"DELETE /api/v1/documents/{doc_id}",
+        desc:"From the document's detail panel in <em>LibraryPage.tsx</em>, after a confirmation naming the title and version.",
+        payload:
+`DELETE /api/v1/documents/d-c930
+// "Delete "Refund Policy v3.0" and its 24 chunks?"`,
+        chips:["confirmed in UI"]
+      },
+      {
+        from:"orch", to:"version_resolver", color:"--c-seed",
+        title:"Check nothing depends on this version",
+        route:"version_resolver.unlink_lineage()",
+        desc:"The row is held <code>FOR UPDATE</code> from the first read. If any document names it as <code>parent_doc_id</code>, the request is refused with a <strong>409</strong> and nothing is written — the parent_doc_id foreign key is ON DELETE SET NULL, so deleting a parent would silently split the chain in two.",
+        payload:
+`SELECT 1 FROM documents WHERE parent_doc_id='d-c930'
+// v1 → v2 → v3 : v3 deletable, v1 and v2 are not (409)`,
+        chips:["409 if descendants"]
+      },
+      {
+        from:"version_resolver", to:"postgres", color:"--c-seed",
+        title:"Restore the parent as latest",
+        route:"lineage update (inverse of ingest)",
+        desc:"The parent becomes current again and its chunks get their open-ended validity window back — exactly undoing the supersession the deleted version performed. Without it the lineage would have no current version and every chunk expired.",
+        payload:
+`UPDATE documents SET is_latest=true WHERE doc_id='d-a201'
+UPDATE chunks SET valid_to=NULL, is_superseded=false
+  WHERE doc_id='d-a201'`,
+        chips:["one latest per lineage"]
+      },
+      {
+        from:"postgres", to:"orch", color:"--c-vector",
+        title:"Row deleted, chunks cascade, COMMIT",
+        route:"DELETE + COMMIT",
+        desc:"The document row is deleted; its chunks go with it through the ON DELETE CASCADE on <code>chunks.doc_id</code>, and <code>conflict_pairs</code> cascade from those chunks in turn. Guard check, parent restore and delete are one transaction, so a refused delete changes nothing.",
+        payload:
+`DELETE FROM documents WHERE doc_id='d-c930'
+-- cascades: chunks → conflict_pairs
+COMMIT`,
+        chips:["single transaction"]
+      },
+      {
+        from:"orch", to:"index", color:"--c-vector",
+        title:"Remove the vectors and the BM25 entries",
+        route:"faiss_store.remove() + bm25_store.remove()",
+        desc:"Both removals are exact. The FAISS index is flat (<code>IndexFlatIP</code> behind an <code>IndexIDMap</code>), so <code>remove_ids()</code> drops the chunks' vectors by their <code>faiss_index_id</code> and nothing is left behind; BM25's corpus is a plain list. Both are persisted, so a restart does not bring them back. They run <em>after</em> the commit on purpose: the index files cannot join the transaction, and entries outliving their rows are harmless (retrieval skips a hit with no row) where rows outliving their entries would be an invisibly unfindable document.",
+        payload:
+`faiss.remove_ids([101, 102, 103])   // exact
+bm25.remove(chunk_ids)              // exact
+// both persisted to data/`,
+        chips:["exact removal"]
+      },
+      {
+        from:"orch", to:"user", color:"--c-user",
+        title:"Deletion confirmed",
+        route:"200 OK",
+        desc:"The library list reloads. A refused delete instead surfaces the 409 message in the detail panel, naming the version that depends on this one.",
+        payload:
+`{
+  "doc_id": "d-c930", "version_string": "3.0",
+  "chunks_deleted": 24,
+  "lineage_message": "v2.0 is the latest version again; 18 chunks reopened."
+}`,
+        chips:["list refreshes"]
       }
     ]
   }

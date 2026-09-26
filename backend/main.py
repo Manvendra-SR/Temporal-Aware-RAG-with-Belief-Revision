@@ -77,12 +77,14 @@ def _check_index_consistency() -> None:
     """
     Compare the FAISS/BM25 index sizes against the chunk count in Postgres.
 
-    The indexes are derived data; Postgres is the source of truth. They can
-    drift when documents are deleted directly from the database, or when an
-    older build wrote to the indexes before committing a transaction that then
-    failed. Drift is silent at query time — orphaned entries are retrieved,
-    fail to resolve to a row, and are dropped, so every result set quietly
-    comes back short. Surfacing it at startup makes it diagnosable.
+    The indexes are derived data; Postgres is the source of truth. Ingesting
+    and deleting through the API keep all three in step, so drift means
+    something bypassed them: a process killed between the database commit and
+    the index update, a document changed directly in the database, or an index
+    file that is stale, missing or written by an older build. Drift is silent
+    at query time — entries that fail to resolve to a row are dropped, so
+    every result set quietly comes back short. Surfacing it at startup makes
+    it diagnosable.
     """
     from sqlalchemy import func
     from database import SessionLocal

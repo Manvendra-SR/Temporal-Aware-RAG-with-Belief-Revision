@@ -7,6 +7,7 @@ Routes:
     GET  /api/v1/documents/roots
     GET  /api/v1/documents/{doc_id}
     GET  /api/v1/documents/{doc_id}/lineage
+    DELETE /api/v1/documents/{doc_id}
 """
 
 from __future__ import annotations
@@ -27,7 +28,12 @@ from models import Chunk, Document
 from services import bm25_store, embedder, faiss_store
 from services.chunker import chunk as do_chunk
 from services.parser import parse, ParseResult
-from services.version_resolver import apply_lineage, validate_lineage, version_sort_key
+from services.version_resolver import (
+    apply_lineage,
+    unlink_lineage,
+    validate_lineage,
+    version_sort_key,
+)
 
 log = logging.getLogger(__name__)
 
@@ -80,6 +86,14 @@ class IngestResponse(BaseModel):
     is_latest: bool
     chunks_created: int
     ingested_at: str
+    lineage_message: str
+
+
+class DeleteResponse(BaseModel):
+    doc_id: str
+    title: str
+    version_string: Optional[str]
+    chunks_deleted: int
     lineage_message: str
 
 
@@ -505,3 +519,95 @@ def get_lineage(doc_id: str, db: Session = Depends(get_db)) -> list[LineageEntry
         )
         for d in chain
     ]
+
+
+# ---------------------------------------------------------------------------
+# DELETE /api/v1/documents/{doc_id}
+# ---------------------------------------------------------------------------
+
+
+@router.delete("/documents/{doc_id}", response_model=DeleteResponse)
+def delete_document(doc_id: str, db: Session = Depends(get_db)) -> DeleteResponse:
+    """
+    Delete a document, its chunks, and its place in the version lineage.
+
+    Lineage rule: a document can only be deleted if no other version names it
+    as its parent. For a chain v1 → v2 → v3 that means v3 can be deleted and
+    v1 and v2 cannot, because the version after them depends on them. Deleting
+    v3 restores v2 as the latest version and reopens its chunks' validity
+    windows — see version_resolver.unlink_lineage(). A document with
+    descendants is refused with a 409 and nothing is written.
+
+    The whole thing is one transaction, and the target row is held FOR UPDATE
+    from the first read, so a concurrent ingest cannot add a child between the
+    dependency check and the delete: whichever transaction commits first wins,
+    and the other is rejected (409 here, 422 there).
+
+    Chunks: removed by the database, via the ON DELETE CASCADE on
+    chunks.doc_id; conflict_pairs cascade from the chunks in turn.
+
+    Indexes: the chunks' vectors are removed from FAISS by their
+    faiss_index_id and their text from the BM25 corpus, both exactly — the
+    FAISS index is a flat inner-product index, which supports remove_ids().
+    Both are updated AFTER the database commit, deliberately. The two stores
+    cannot be committed atomically with Postgres, so the ordering decides
+    which way an interrupted delete fails: this way the rows are gone and at
+    worst some index entries outlive them, which retrieval ignores (a hit that
+    resolves to no row is skipped) and rebuild_indexes.py cleans up. Removing
+    from the indexes first would mean a failed commit leaves a document that
+    still exists but can no longer be found — silent and much harder to
+    notice.
+    """
+    doc = (
+        db.query(Document)
+        .filter(Document.doc_id == doc_id)
+        .with_for_update()
+        .first()
+    )
+    if doc is None:
+        raise HTTPException(status_code=404, detail="Document not found.")
+
+    try:
+        lineage_message = unlink_lineage(doc, db)
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=str(exc))
+
+    # Read the index keys while the chunks still exist; the cascade takes the
+    # rows with the document and there is no second chance to look them up.
+    rows = (
+        db.query(Chunk.chunk_id, Chunk.faiss_index_id)
+        .filter(Chunk.doc_id == doc_id)
+        .all()
+    )
+    chunk_ids = [row.chunk_id for row in rows]
+    faiss_ids = [row.faiss_index_id for row in rows if row.faiss_index_id is not None]
+    title, version_string = doc.title, doc.version_string
+
+    db.delete(doc)
+    db.commit()
+
+    # Index cleanup last, after the rows are durably gone — the same ordering
+    # as ingestion, and for the same reason: Postgres is the source of truth
+    # and the indexes are derivable from it.
+    try:
+        faiss_store.remove(faiss_ids)
+        bm25_store.remove(chunk_ids)
+    except Exception:
+        log.exception(
+            "Failed to remove the %d chunks of deleted doc_id=%s from the search "
+            "indexes. They cannot be retrieved (retrieval resolves every hit "
+            "through the database), but the indexes should be rebuilt to drop "
+            "them (python scripts/rebuild_indexes.py).",
+            len(chunk_ids), doc_id,
+        )
+
+    log.info("Deleted doc_id=%s with %d chunks. Lineage: %s", doc_id, len(chunk_ids), lineage_message)
+
+    return DeleteResponse(
+        doc_id=doc_id,
+        title=title,
+        version_string=version_string,
+        chunks_deleted=len(chunk_ids),
+        lineage_message=lineage_message,
+    )

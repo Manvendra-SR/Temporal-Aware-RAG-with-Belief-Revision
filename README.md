@@ -21,7 +21,10 @@ Built with FastAPI, PostgreSQL, FAISS + BM25, a Hugging Face NLI model, Groq
    a validity window: `valid_from` to `valid_to`. A version that doesn't extend
    its parent (unknown parent, already-superseded parent, a version or date that
    doesn't move forward) is rejected up front, before the file is parsed,
-   chunked and embedded.
+   chunked and embedded. Deleting works the other way round: a version can
+   only be deleted if no later version depends on it, so a chain is dismantled
+   newest-first, and removing the current version makes the one before it
+   current again.
 2. **Understand the question.** One LLM call reads the question and returns its
    time intent as JSON (table below). The LLM only interprets the question; it
    never chooses which chunks to use.
@@ -124,7 +127,12 @@ and a changed fact. Ask about it now, as of a past date, and "according to
 version 1.0". Tick "Compare against standard RAG" to see the difference.
 
 If the search indexes ever get out of sync with the database, rebuild them with
-`python scripts/rebuild_indexes.py` (run from `backend/`).
+`python scripts/rebuild_indexes.py` (run from `backend/`). Ingesting and
+deleting through the API keep them in step on their own — deleting a document
+removes its vectors from FAISS and its text from BM25 — so drift means
+something went around the API: a process killed between the database commit and
+the index update, an index file lost or copied between machines, or a document
+changed directly in the database.
 
 ---
 
@@ -136,9 +144,10 @@ python -m pytest
 ```
 
 Covers version lineage (including that an invalid version is rejected before
-any parsing, chunking or embedding happens), the analyzer's output validation,
-filtering for every intent, conflict handling, prompt building, and the full
-query endpoint with the search indexes, NLI model and LLMs faked.
+any parsing, chunking or embedding happens, and that deleting a version with a
+descendant is refused without changing anything), the analyzer's output
+validation, filtering for every intent, conflict handling, prompt building, and
+the full query endpoint with the search indexes, NLI model and LLMs faked.
 
 ---
 
@@ -202,6 +211,7 @@ steps are in [`evaluation/README.md`](evaluation/README.md).
 | POST | `/api/v1/query` | Ask a question (`no_temporal: true` = plain RAG) |
 | GET | `/api/v1/documents` | List documents |
 | GET | `/api/v1/documents/{id}/lineage` | Version chain of a document |
+| DELETE | `/api/v1/documents/{id}` | Delete a document (only if no later version depends on it) |
 | GET | `/api/v1/conflicts` | Detected contradictions |
 | POST | `/api/v1/conflicts/{id}/resolve` | Record a manual resolution |
 

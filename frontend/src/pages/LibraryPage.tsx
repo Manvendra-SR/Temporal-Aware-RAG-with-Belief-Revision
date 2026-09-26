@@ -147,9 +147,32 @@ function LineageStrip({ docId, currentDocId }: { docId: string; currentDocId: st
 
 // ── Document Detail Drawer ─────────────────────────────────────────────────
 
-function DocDetailPanel({ doc, onClose }: { doc: DocumentSummary; onClose: () => void }) {
+function DocDetailPanel(
+  { doc, onClose, onDeleted }: { doc: DocumentSummary; onClose: () => void; onDeleted: () => void },
+) {
   const [detail, setDetail] = useState<DocumentDetail | null>(null)
   const [loading, setLoading] = useState(true)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+
+  // A document can only be deleted when no later version depends on it, so
+  // the backend answers 409 for anything but the current version of a
+  // lineage. That message is what the user needs to see, verbatim.
+  const remove = async () => {
+    const label = doc.version_string ? `${doc.title} v${doc.version_string}` : doc.title
+    if (!window.confirm(`Delete "${label}" and its ${doc.chunk_count} chunks? This cannot be undone.`)) return
+
+    setDeleting(true)
+    setDeleteError(null)
+    try {
+      await axios.delete(`/api/v1/documents/${doc.doc_id}`)
+      onDeleted()
+    } catch (err) {
+      const detail = axios.isAxiosError(err) ? err.response?.data?.detail : null
+      setDeleteError(detail ?? 'Failed to delete the document. Is the backend running?')
+      setDeleting(false)
+    }
+  }
 
   useEffect(() => {
     axios.get<DocumentDetail>(`/api/v1/documents/${doc.doc_id}`)
@@ -214,9 +237,24 @@ function DocDetailPanel({ doc, onClose }: { doc: DocumentSummary; onClose: () =>
             </div>
           </div>
 
-          <div>
+          {deleteError && (
+            <div className="alert alert-danger">
+              <svg className="alert-icon" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-11a.75.75 0 00-1.5 0v4a.75.75 0 001.5 0V7zm-.75 7.5a.75.75 0 100-1.5.75.75 0 000 1.5z" clipRule="evenodd"/></svg>
+              {deleteError}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: '8px' }}>
             <button className="btn btn-ghost" style={{ fontSize: '12px', padding: '6px 12px' }} onClick={onClose}>
               Collapse ↑
+            </button>
+            <button
+              className="btn btn-danger"
+              style={{ fontSize: '12px', padding: '6px 12px' }}
+              onClick={remove}
+              disabled={deleting}
+            >
+              {deleting ? 'Deleting…' : 'Delete document'}
             </button>
           </div>
         </div>
@@ -234,6 +272,7 @@ function DocumentsTab() {
   const [loading, setLoading]     = useState(false)
   const [error, setError]         = useState<string | null>(null)
   const [expandedId, setExpanded] = useState<string | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
 
   const LIMIT = 20
 
@@ -252,7 +291,7 @@ function DocumentsTab() {
       }
     }
     load()
-  }, [page])
+  }, [page, reloadKey])
 
   const totalPages = Math.ceil(total / LIMIT)
 
@@ -350,7 +389,11 @@ function DocumentsTab() {
                 {expandedId === doc.doc_id && (
                   <tr>
                     <td colSpan={6} style={{ padding: 0, borderBottom: '1px solid var(--border)' }}>
-                      <DocDetailPanel doc={doc} onClose={() => setExpanded(null)} />
+                      <DocDetailPanel
+                        doc={doc}
+                        onClose={() => setExpanded(null)}
+                        onDeleted={() => { setExpanded(null); setReloadKey(k => k + 1) }}
+                      />
                     </td>
                   </tr>
                 )}

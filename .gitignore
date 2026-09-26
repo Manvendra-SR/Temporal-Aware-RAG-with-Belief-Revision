@@ -48,4 +48,4 @@ Thumbs.db
 
 # Implementation files
 ARCHITECTURE_DEEP_DIVE.md
-backend/tests/
+# backend/tests/

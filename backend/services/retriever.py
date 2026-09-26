@@ -5,7 +5,7 @@ hybrid_retrieve(query, db, k) → List[CandidateChunk]
 
 Pipeline:
   1. BM25 keyword search  → top-50 chunk_ids + raw BM25 scores
-  2. Dense vector search  → top-50 faiss_ids + squared-L2 distances
+  2. Dense vector search  → top-50 faiss_ids + cosine similarities
   3. RRF merge            → combined rank-fusion score per chunk
   4. Fetch DB metadata    → CandidateChunk dataclass (incl. temporal fields)
   5. Normalise RRF into `relevance_score` ∈ [0, 1] across the candidate set
@@ -19,11 +19,13 @@ bm25_score       Raw Okapi BM25. UNBOUNDED and corpus-dependent; typical values
                  Diagnostic only — never combine or render it as a fraction.
 
 semantic_score   True cosine similarity in [0, 1]. Embeddings are unit vectors
-                 (see services/embedder.py), and FAISS returns SQUARED L2, so
-                 the exact conversion is  cos = 1 - d/2.
-                 This replaced `1 / (1 + d)`, which was monotonic but crushed
-                 every result into a ~0.40-0.43 band, making the term
-                 contribute almost nothing to any weighted combination.
+                 (see services/embedder.py) and the FAISS index is an
+                 inner-product one, so what FAISS returns IS the cosine —
+                 negative values (unrelated text) are clamped to 0.
+                 An earlier build scored `1 / (1 + d)` over L2 distances,
+                 which was monotonic but crushed every result into a
+                 ~0.40-0.43 band, making the term contribute almost nothing
+                 to any weighted combination.
 
 rrf_score        Reciprocal Rank Fusion, sum of 1/(60 + rank) over the two
                  retrievers. Bounded by 2/61 ≈ 0.0328. Rank-based, so it is
@@ -110,9 +112,12 @@ def hybrid_retrieve(
     bm25_score_map: dict[str, float] = {cid: score for cid, score in bm25_results}
 
     # ── 2. Dense search ─────────────────────────────────────────────────────
-    query_vec = embedder.embed([query])[0]  # shape (384,)
-    dense_ids, dense_dists = faiss_store.search(query_vec, k=dense_fetch)
-    # Convert FAISS integer IDs → chunk_ids via DB
+    query_vec = embedder.embed([query])[0]  # shape (384,), unit norm
+    dense_ids, dense_sims = faiss_store.search(query_vec, k=dense_fetch)
+    # Convert FAISS integer IDs → chunk_ids via DB. This lookup is the mapping
+    # from the index back to the data, not a filter: a FAISS id that no longer
+    # matches a row (an index left over from an interrupted write, or restored
+    # from a stale file) simply has nothing to return and is skipped.
     faiss_id_to_chunk_id: dict[int, str] = {}
     if dense_ids:
         db_chunks = (
@@ -123,12 +128,12 @@ def hybrid_retrieve(
         faiss_id_to_chunk_id = {row.faiss_index_id: row.chunk_id for row in db_chunks}
 
     dense_rank: dict[str, int] = {}
-    dense_distance_map: dict[str, float] = {}
-    for rank, (fid, dist) in enumerate(zip(dense_ids, dense_dists)):
+    dense_similarity_map: dict[str, float] = {}
+    for rank, (fid, sim) in enumerate(zip(dense_ids, dense_sims)):
         cid = faiss_id_to_chunk_id.get(fid)
         if cid:
             dense_rank[cid] = rank
-            dense_distance_map[cid] = float(dist)
+            dense_similarity_map[cid] = float(sim)
 
     # ── 3. RRF merge ────────────────────────────────────────────────────────
     all_chunk_ids = set(bm25_rank) | set(dense_rank)
@@ -167,7 +172,7 @@ def hybrid_retrieve(
             content_snippet=chunk_row.content_snippet or chunk_row.content[:200],
             section_heading=chunk_row.section_heading,
             bm25_score=bm25_score_map.get(cid, 0.0),
-            semantic_score=cosine_from_sq_l2(dense_distance_map.get(cid)),
+            semantic_score=clamp_cosine(dense_similarity_map.get(cid)),
             rrf_score=round(rrf_scores[cid], 6),
             # ── Temporal metadata ─────────────────────────────────────────
             valid_from=chunk_row.valid_from,
@@ -206,21 +211,22 @@ def hybrid_retrieve(
     return results
 
 
-def cosine_from_sq_l2(sq_distance: float | None) -> float:
+def clamp_cosine(similarity: float | None) -> float:
     """
-    Convert a FAISS squared-L2 distance between UNIT vectors to cosine similarity.
+    Turn a raw FAISS inner-product score into a displayable cosine in [0, 1].
 
-    For unit vectors, ||a - b||² = 2 - 2·cos(a, b), hence cos = 1 - d/2.
-    Embeddings are L2-normalised by services.embedder, so this identity holds.
+    The index is IndexFlatIP and services.embedder L2-normalises every vector,
+    so the score FAISS returns is already the cosine similarity; there is no
+    conversion to do. It is only bounded here: a negative cosine means
+    "unrelated" for this purpose and reads as 0, and values a hair over 1 from
+    floating-point noise read as 1.
 
     A chunk that BM25 surfaced but the dense retriever never returned has no
-    distance; it scores 0.0 rather than an arbitrary large-distance value.
-    Result is clamped to [0, 1] — negative cosines mean "unrelated" here.
+    similarity at all; it scores 0.0 rather than an invented one.
     """
-    if sq_distance is None:
+    if similarity is None:
         return 0.0
-    cosine = 1.0 - (float(sq_distance) / 2.0)
-    return round(max(0.0, min(1.0, cosine)), 4)
+    return round(max(0.0, min(1.0, float(similarity))), 4)
 
 
 def assign_relevance_scores(candidates: list[CandidateChunk]) -> None:

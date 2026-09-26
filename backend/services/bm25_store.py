@@ -8,7 +8,7 @@ Persistence:
     data/bm25.pkl   — pickled (corpus_ids, tokenized_corpus, BM25Okapi)
 
 Usage:
-    from services.bm25_store import add, search, corpus_size
+    from services.bm25_store import add, remove, search, corpus_size
 
     add(["chunk-uuid-1", "chunk-uuid-2"], ["text one", "text two"])
     results = search("some query", k=10)
@@ -84,6 +84,30 @@ def add(chunk_ids: list[str], texts: list[str], persist: bool = True) -> None:
     _rebuild()
     if persist:
         _save()
+
+
+def remove(chunk_ids: list[str], persist: bool = True) -> None:
+    """
+    Drop the given chunks from the corpus and rebuild the index.
+
+    Used when a document is deleted. The corpus is two parallel lists, so
+    removal is exact: every trace of the chunk is gone and the index is
+    rebuilt from what is left — the same full rebuild add() already does.
+    (FAISS has no equivalent: see the note in routers/ingest.py's delete
+    route.)
+    """
+    global _corpus_ids, _corpus_texts
+    doomed = set(chunk_ids)
+    if not doomed:
+        return
+
+    kept = [(cid, text) for cid, text in zip(_corpus_ids, _corpus_texts) if cid not in doomed]
+    _corpus_ids = [cid for cid, _ in kept]
+    _corpus_texts = [text for _, text in kept]
+    _rebuild()
+    if persist:
+        _save()
+    log.info("Removed %d chunks from the BM25 index (%d remain).", len(doomed), len(_corpus_ids))
 
 
 def reset() -> None:

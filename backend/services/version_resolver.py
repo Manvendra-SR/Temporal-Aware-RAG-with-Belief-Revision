@@ -44,6 +44,12 @@ of a lineage is valid on any given day. Branching from an older version would
 leave two "latest" documents, and a version dated before its parent would give
 the parent a window that ends before it starts.
 
+    unlink_lineage(doc, db)
+        The delete path. A version can only be removed if nothing points at it
+        as a parent, which — because every superseded version has a child —
+        means only the current version of a lineage is deletable. Removing it
+        restores its parent as the current version, undoing the supersession.
+
 lineage_roots(db, doc_ids) → {doc_id: root_doc_id}
     Identifies which lineage each document belongs to. The conflict detector
     uses it to tell a genuine version supersession (same lineage) from a
@@ -337,6 +343,77 @@ def _check_guards(parent: Document, new_version: str, new_date: datetime) -> Non
             f"earlier than the parent version's "
             f"({parent.published_at.date().isoformat()})."
         )
+
+
+def unlink_lineage(doc: Document, db: Session) -> str:
+    """
+    Take `doc` out of its lineage so that it can be deleted. Returns a message.
+
+    Deletion is only allowed for a version nothing else depends on: if another
+    document names `doc` as its parent, deleting it would leave that child
+    pointing at a row that no longer exists (the parent_doc_id foreign key is
+    ON DELETE SET NULL, so the chain would silently break into two lineages).
+    Because apply_lineage() only accepts a parent that is still is_latest,
+    every superseded version already has exactly one child — so the one
+    deletable version of a lineage is its current one.
+
+    Removing the current version makes its parent current again, which is
+    exactly the inverse of the supersession apply_lineage() performed: the
+    parent's is_latest goes back to True and its chunks get their open-ended
+    validity window back (valid_to = None, is_superseded = False). Without
+    that the lineage would be left with no current version at all and every
+    one of its chunks expired, so it would disappear from "current" questions
+    while still sitting in the database.
+
+    The parent is loaded FOR UPDATE, and the caller holds the same lock on
+    `doc` itself, which is what serialises this against a concurrent ingest
+    trying to add a new version on top of either one.
+
+    Raises:
+        ValueError: If another document depends on `doc` as its parent.
+    """
+    child = (
+        db.query(Document)
+        .filter(Document.parent_doc_id == doc.doc_id)
+        .first()
+    )
+    if child is not None:
+        raise ValueError(
+            f"Document '{doc.title}' v{doc.version_string} cannot be deleted "
+            f"because v{child.version_string} was published as its next "
+            f"version. Delete the newer version first."
+        )
+
+    if doc.parent_doc_id is None:
+        # The whole lineage was this one document; nothing else to restore.
+        return "Lineage removed."
+
+    parent = _load_parent(db, doc.parent_doc_id, lock=True)
+    parent.is_latest = True
+
+    reopened = (
+        db.query(Chunk)
+        .filter(
+            Chunk.doc_id == parent.doc_id,
+            Chunk.is_superseded == True,  # noqa: E712
+        )
+        .all()
+    )
+    for ch in reopened:
+        ch.valid_to = None
+        ch.is_superseded = False
+
+    log.info(
+        "Deleting doc %s (v%s); restoring parent %s (v%s) as latest, reopening %d chunks",
+        doc.doc_id[:8], doc.version_string,
+        parent.doc_id[:8], parent.version_string, len(reopened),
+    )
+
+    return (
+        f"v{parent.version_string} is the latest version again"
+        + (f"; {len(reopened)} chunk{'s' if len(reopened) != 1 else ''} reopened."
+           if reopened else ".")
+    )
 
 
 def lineage_roots(db: Session, doc_ids: Iterable[str]) -> dict[str, str]:

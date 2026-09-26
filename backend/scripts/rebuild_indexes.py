@@ -1,20 +1,21 @@
 """
 scripts/rebuild_indexes.py — Rebuild the FAISS and BM25 indexes from Postgres.
 
-Postgres is the source of truth; the two search indexes are derived data. They
-can drift out of sync with it when:
+Postgres is the source of truth; the two search indexes are derived data.
+Normal ingestion and deletion keep them in step — both stores support exact
+removal, so a deleted document's entries go with it. Drift comes from the
+edges instead:
 
-  * documents are deleted straight from the database (there is no delete
-    endpoint, so this is the only way to remove one), leaving vectors behind
-    that no longer map to any chunk;
-  * an ingest failed midway in an older build, which wrote to the indexes
-    before committing the transaction;
-  * an index file is lost, corrupted, or copied between machines.
+  * a delete or ingest interrupted between the database commit and the index
+    update, leaving entries with no row (or rows with no entries);
+  * documents changed straight in the database, bypassing the API;
+  * an index file lost, corrupted, copied between machines, or written by an
+    older build with a different index type (the FAISS index is now a flat
+    inner-product index; an older L2 HNSW file is refused at startup).
 
-Drifted indexes fail silently at query time: orphaned entries are retrieved,
-cannot be resolved back to a chunk row, and are dropped — so every result set
-quietly comes back shorter than requested. `main.py` warns about this at
-startup; this script fixes it.
+Drifted indexes fail quietly at query time: entries that cannot be resolved
+back to a chunk row are dropped, so a result set comes back shorter than
+requested. `main.py` warns about this at startup; this script fixes it.
 
 The rebuild re-embeds every chunk, reassigns faiss_index_id values densely from
 zero, and updates those ids in the database, so the result is a clean and
