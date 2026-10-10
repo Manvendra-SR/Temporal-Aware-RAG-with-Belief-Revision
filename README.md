@@ -215,4 +215,4 @@ steps are in [`evaluation/README.md`](evaluation/README.md).
 | GET | `/api/v1/conflicts` | Detected contradictions |
 | POST | `/api/v1/conflicts/{id}/resolve` | Record a manual resolution |
 
-Interactive docs at <http://localhost:8000/docs>.
+Once the backend is running, interactive API docs (Swagger UI) are available at `http://localhost:8000/docs`.
