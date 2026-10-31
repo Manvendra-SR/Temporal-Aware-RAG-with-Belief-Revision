@@ -29,6 +29,7 @@ from conftest import (
     make_chunk,
     pinned,
     press_release,
+    utc,
 )
 from routers import query as query_router
 from routers.query import QueryRequest, query_endpoint
@@ -216,10 +217,11 @@ class TestConflictingDocuments:
 
 class TestOverFetch:
     def corpus(self):
-        # Six chunks: the four with the highest RRF are all superseded, so
+        # Six chunks: the four with the highest RRF have all expired, so
         # retrieving only max_chunks=2 before filtering would leave nothing.
         stale = [
             make_chunk(f"stale{i}", doc_id=f"old{i}", is_superseded=True,
+                       valid_from=utc(2020, 1, 1), valid_to=utc(2021, 1, 1),
                        rrf_score=0.03 - i * 0.001, content=f"old text {i}")
             for i in range(4)
         ]
@@ -277,3 +279,20 @@ class TestBaseline:
         assert not re.search(r"\d{4}-\d{2}-\d{2}", p.context)
         for marker in ("v1.0", "v2.0", "v3.0", "valid", "TIME FRAME", "CONFIDENCE", "PREFERRED"):
             assert marker not in p.context
+
+
+# ── What the source cards claim ──────────────────────────────────────────────
+
+
+class TestPreferredFlag:
+    """A source is "preferred" only when it actually won a conflict."""
+
+    def test_the_winner_of_an_arbitrated_conflict_is_preferred(self, monkeypatch) -> None:
+        response = Pipeline(monkeypatch, handbook_and_press, CURRENT).ask("Who is the CEO?")
+        flags = {s.chunk_id: s.preferred for s in response.sources}
+        assert flags == {"press": True, "v3": False}
+
+    def test_kept_both_conflicts_prefer_neither_side(self, monkeypatch) -> None:
+        response = Pipeline(monkeypatch, ceo_versions, HISTORICAL).ask("Who used to be the CEO?")
+        assert response.conflicts_detected > 0
+        assert not any(s.preferred for s in response.sources)

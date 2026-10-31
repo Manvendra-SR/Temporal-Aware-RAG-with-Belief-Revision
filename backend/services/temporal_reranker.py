@@ -14,7 +14,8 @@ Two steps, deliberately kept separate:
 
        intent          chunk is kept when
        ─────────────   ─────────────────────────────────────────────────────
-       current         it is valid today (not superseded, already published)
+       current         its window contains today (already published, not yet
+                       replaced by a version whose publication date has come)
        point_in_time   its window contains as_of
        range           its window overlaps [start_date, end_date] (inclusive;
                        either bound may be open)
@@ -111,10 +112,11 @@ def is_temporally_valid(
     intent = query_analysis.intent
 
     if intent is TemporalIntent.CURRENT:
-        # is_superseded and valid_to are set together by version_resolver;
-        # checking the flag as well keeps superseded text out of current
-        # answers even for a row whose valid_to was never stamped.
-        return not chunk.is_superseded and valid_on(chunk, today)
+        # The window alone decides. is_superseded is set as soon as a newer
+        # version is *ingested*, but a future-dated version only takes over on
+        # its valid_from: until then the parent is still the current answer,
+        # and its valid_to (the child's publication date) already says so.
+        return valid_on(chunk, today)
 
     if intent is TemporalIntent.POINT_IN_TIME:
         return valid_on(chunk, query_analysis.as_of)

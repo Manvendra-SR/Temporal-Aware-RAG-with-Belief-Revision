@@ -19,24 +19,29 @@ names Rahul and the one that names Priya.
 
 Rules, per conflict pair
 ------------------------
-1. A stored human resolution (Conflicts page) takes precedence:
-     temporal_preference  → the newer source is authoritative.
-                            present: exclude the older side   (high)
-                            past:    keep both, note the ruling (high)
-     scope_clarification  → the claims apply to different scopes; keep both (high)
-     manual / other       → a reviewer looked but recorded no winner; keep both (medium)
-
-2. version_supersession — both chunks are versions of the same document.
+1. version_supersession — both chunks are versions of the same document.
      Keep both, labelled with their validity windows (high).
      The disagreement is the document changing over time, and lineage fully
-     explains it. For present questions this pair does not normally occur at
-     all: the temporal filter has already removed superseded versions.
+     explains it, so it is never reviewed and no stored resolution applies.
+     For present questions the pair cannot occur: a lineage's validity
+     windows do not overlap, so only one version is valid today.
 
-3. direct_contradiction — two unrelated documents disagree.
+2. direct_contradiction with a reviewer's decision (Conflicts page). The
+   decision replaces the automatic rule below:
+     prefer_source (preferred_chunk_id names the winner)
+       present: exclude the other side, quoting it as set aside   (high)
+       past:    keep both, telling the model whom the reviewer trusts where
+                they overlap — the other side may still be right about its
+                own period, and deleting it would lose history          (high)
+     both_valid  — not really a contradiction (different scopes, or an NLI
+                   false positive); keep both                          (high)
+   A row whose decision is malformed is ignored, so rule 3 applies.
+
+3. direct_contradiction, pending review — two unrelated documents disagree.
      present, both dated, published more than CONTRADICTION_RECENCY_GAP_DAYS
        apart → prefer the newer, exclude the older (medium)
-     otherwise (close dates, a missing date, or a question about the past)
-       → keep both, flag the disagreement (low)
+     otherwise (close or identical dates, a missing date, or a question about
+       the past) → keep both, flag the disagreement (low)
 
 The final confidence is the worst across all pairs; "none" means no conflict.
 """
@@ -52,7 +57,7 @@ __all__ = ["CONTRADICTION_RECENCY_GAP_DAYS", "RevisionResult", "revise"]
 
 from sqlalchemy.orm import Session
 
-from models import ConflictPair
+from models import BOTH_VALID, VERSION_CHANGE, ConflictPair
 from services.conflict_detector import ConflictResult
 from services.query_analyzer import QueryAnalysis, TemporalIntent
 from services.retriever import CandidateChunk
@@ -143,12 +148,14 @@ def revise(
             # nothing to act on.
             continue
 
+        if conflict.conflict_type == VERSION_CHANGE:
+            rulings.append(_rule_version_change(a, b))
+            continue
+        # CONTRADICTION — the only other type the detector emits.
         stored = _load_stored_resolution(db, conflict.chunk_id_a, conflict.chunk_id_b)
         if stored is not None:
             rulings.append(_apply_stored_resolution(stored, a, b, present))
-        elif conflict.conflict_type == "version_supersession":
-            rulings.append(_rule_version_change(a, b))
-        else:  # "direct_contradiction" — the only other type the detector emits
+        else:
             rulings.append(_rule_unrelated_contradiction(a, b, present))
 
     if not rulings:
@@ -228,7 +235,7 @@ def _rule_unrelated_contradiction(
             f"and {_title(newer)} ({_fmt_date(newer)}) make conflicting claims. "
             f"{_title(newer)} is {gap} days newer and is PREFERRED for the "
             f"current answer."
-            + _superseded_footnote(older)
+            + _excluded_footnote(older, by_reviewer=False)
         )
         return _Ruling(
             confidence="medium",
@@ -262,8 +269,8 @@ def _load_stored_resolution(
     db: Session, id_a: str, id_b: str
 ) -> Optional[ConflictPair]:
     """
-    Return the ConflictPair row if it exists AND is_resolved=True.
-    Returns None otherwise (the automatic rules then apply).
+    Return the pair's row if a reviewer resolved it with a decision that can be
+    applied; None otherwise (the automatic rule then applies).
     """
     row = (
         db.query(ConflictPair)
@@ -274,6 +281,15 @@ def _load_stored_resolution(
         )
         .first()
     )
+    if row is None:
+        return None
+    if not row.has_valid_resolution():
+        log.warning(
+            "belief_revision: ignoring malformed resolution on conflict %s "
+            "(type=%r, preferred=%r)",
+            row.conflict_id, row.resolution_type, row.preferred_chunk_id,
+        )
+        return None
     return row
 
 
@@ -283,48 +299,43 @@ def _apply_stored_resolution(
     b: CandidateChunk,
     present: bool,
 ) -> _Ruling:
-    """
-    Apply a reviewer's stored resolution. Each type maps to one consistent
-    (action, confidence) pair — see the module docstring.
-    """
-    res_type = row.resolution_type or "manual"
+    """Apply a reviewer's decision — see rule 2 in the module docstring."""
+    if row.resolution_type == BOTH_VALID:
+        ruling = _Ruling(confidence="high", notice="")
+        detail = (
+            f"A reviewer judged that {_title(a)} ({_fmt_date(a)}) and {_title(b)} "
+            f"({_fmt_date(b)}) do not actually contradict each other: they apply to "
+            f"different scopes or situations. Both are included; use each for what "
+            f"it covers."
+        )
+    else:  # PREFER_SOURCE — has_valid_resolution() guarantees the id is a or b
+        preferred, other = (a, b) if row.preferred_chunk_id == a.chunk_id else (b, a)
+        ruling = _Ruling(confidence="high", notice="")
+        if present:
+            detail = (
+                f"A reviewer judged {_title(preferred)} ({_fmt_date(preferred)}) "
+                f"correct over {_title(other)} ({_fmt_date(other)}); the other "
+                f"claim is excluded."
+                + _excluded_footnote(other, by_reviewer=True)
+            )
+            ruling.exclude = other.chunk_id
+            ruling.prefer = preferred.chunk_id
+            ruling.exclusion_reason = (
+                f"A reviewer resolved this conflict in favour of "
+                f"{_title(preferred)} ({_fmt_date(preferred)})."
+            )
+        else:
+            detail = (
+                f"A reviewer judged {_title(preferred)} ({_fmt_date(preferred)}) "
+                f"correct over {_title(other)} ({_fmt_date(other)}). The question "
+                f"is about the past, so both are included: {_title(other)} (valid "
+                f"{_window(other)}) may still describe its own period. Where the "
+                f"two disagree about the same time, rely on {_title(preferred)}."
+            )
+
     note = row.resolution_note or ""
-    older, newer = _order_by_date(a, b)
-    ruling = _Ruling(confidence="high", notice="")
-
-    if res_type == "temporal_preference" and present:
-        detail = (
-            f"{_title(newer)} ({_fmt_date(newer)}) was chosen over "
-            f"{_title(older)} ({_fmt_date(older)}); the older claim is excluded."
-            + _superseded_footnote(older)
-        )
-        ruling.exclude = older.chunk_id
-        ruling.prefer = newer.chunk_id
-        ruling.exclusion_reason = (
-            f"A reviewer resolved this conflict in favour of "
-            f"{_title(newer)} ({_fmt_date(newer)})."
-        )
-    elif res_type == "temporal_preference":
-        detail = (
-            f"A reviewer ruled that {_title(newer)} ({_fmt_date(newer)}) supersedes "
-            f"{_title(older)} ({_fmt_date(older)}). The question is about the past, "
-            f"so both are included: the older claim describes the state before "
-            f"{_fmt_date(newer)}."
-        )
-    elif res_type == "scope_clarification":
-        detail = (
-            "The two sources were judged to apply to different scopes rather "
-            "than to contradict each other, so both are included."
-        )
-    else:
-        ruling.confidence = "medium"
-        detail = (
-            "A reviewer resolved this conflict manually without recording which "
-            "source supersedes the other, so both are included."
-        )
-
     ruling.notice = (
-        f"✓ CONFLICT PREVIOUSLY RESOLVED (type: {res_type}).\n{detail}"
+        f"✓ REVIEWED CONFLICT:\n{detail}"
         + (f"\nReviewer note: {note}" if note else "")
     )
     return ruling
@@ -346,7 +357,7 @@ def _build_reason(worst: str, n: int) -> str:
     if worst == "high":
         return (
             f"{n} conflict(s), each explained by the document's version history "
-            f"or a reviewer's resolution."
+            f"or settled by a reviewer's decision."
         )
     if worst == "medium":
         return (
@@ -365,27 +376,34 @@ def _build_reason(worst: str, n: int) -> str:
 FOOTNOTE_CHARS = 400
 
 
-def _superseded_footnote(older: CandidateChunk) -> str:
+def _excluded_footnote(excluded: CandidateChunk, *, by_reviewer: bool) -> str:
     """
-    Quote the excluded claim so the model can describe what changed.
+    Quote the excluded claim so the model can describe the disagreement.
 
     An excluded chunk is removed from the context entirely, so without this the
-    model is told that an older source was overridden but never shown what it
-    said, and cannot answer "what changed?".
+    model is told that a source was overridden but never shown what it said,
+    and cannot answer "what changed?".
 
-    The quote is deliberately short and labelled as superseded: enough to state
-    what the old claim was, not enough to compete with the preferred source.
+    The quote is deliberately short and labelled: enough to state what the
+    claim was, not enough to compete with the preferred source. A reviewer may
+    prefer the OLDER source, so their exclusions are not called "superseded".
     """
-    if not older.content:
+    if not excluded.content:
         return ""
 
-    quote = " ".join(older.content.split())
+    quote = " ".join(excluded.content.split())
     if len(quote) > FOOTNOTE_CHARS:
         quote = quote[:FOOTNOTE_CHARS].rstrip() + "…"
 
+    label = "set-aside" if by_reviewer else "superseded"
+    use = (
+        "A reviewer judged it incorrect; mention it only to explain the disagreement."
+        if by_reviewer else
+        "Use this only to describe what CHANGED."
+    )
     return (
-        f"\nThe superseded {_title(older)} ({_fmt_date(older)}) stated: \"{quote}\"\n"
-        f"Use this only to describe what CHANGED. Do not present it as current."
+        f"\nThe {label} {_title(excluded)} ({_fmt_date(excluded)}) stated: \"{quote}\"\n"
+        f"{use} Do not present it as current."
     )
 
 

@@ -47,5 +47,6 @@ Thumbs.db
 *.log
 
 # Implementation files
-ARCHITECTURE_DEEP_DIVE.md
+# ARCHITECTURE_DEEP_DIVE.md
 # backend/tests/
+Temporal_RAG_Interview_Prep.pdf

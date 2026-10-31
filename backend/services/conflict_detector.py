@@ -28,9 +28,22 @@ unrelated documents as versions of each other whenever they happened to be
 published a few months apart — and belief revision then resolved them with
 high confidence on the strength of a relationship that did not exist.
 
+Why lineage is the right evidence: a lineage is a single chain whose validity
+windows follow each other without overlapping, so two versions of one document
+are never valid at the same moment. Their disagreement is always a change over
+time, never two sources competing for the same moment, and it needs no human
+review. Two unrelated documents carry no such guarantee. Version numbers are
+never compared across lineages: "1.0" of one document says nothing about
+"1.0" of another.
+
 Cached rows store the NLI score. Their type is recomputed from lineage every
 time they are loaded (and corrected in the database if it changed), so rows
 written under an older rule never leak a stale type into a query.
+(migrations.py applies the same correction to rows no query loads.)
+
+NLI is directional (premise, hypothesis), so each pair is always scored in
+canonical chunk-id order: the cached score must not depend on the order in
+which retrieval happened to return the two chunks the first time.
 
 Idempotency guarantee
 ---------------------
@@ -55,7 +68,7 @@ from sqlalchemy import tuple_ as sa_tuple
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
-from models import ConflictPair
+from models import CONTRADICTION, VERSION_CHANGE, ConflictPair
 from services import nli
 from services.retriever import CandidateChunk
 
@@ -131,7 +144,7 @@ def detect(
     new_results: list[ConflictResult] = []
     if uncached_pairs and nli.is_loaded():
         t_nli = time.monotonic()
-        text_pairs = [(a.content, b.content) for a, b in uncached_pairs]
+        text_pairs = [_nli_input(a, b) for a, b in uncached_pairs]
         scores = nli.predict(text_pairs)
         nli_elapsed = (time.monotonic() - t_nli) * 1000
         log.info(
@@ -180,6 +193,11 @@ def _canonical(id_a: str, id_b: str) -> tuple[str, str]:
     This ensures (A,B) and (B,A) always map to the same key and DB row.
     """
     return (min(id_a, id_b), max(id_a, id_b))
+
+
+def _nli_input(a: CandidateChunk, b: CandidateChunk) -> tuple[str, str]:
+    """The (premise, hypothesis) texts, in canonical chunk-id order."""
+    return (a.content, b.content) if a.chunk_id <= b.chunk_id else (b.content, a.content)
 
 
 def _select_pairs(
@@ -336,8 +354,8 @@ def _classify(
     if nli_score < NLI_THRESHOLD:
         return None
     if _lineage(a) == _lineage(b):
-        return "version_supersession"
-    return "direct_contradiction"
+        return VERSION_CHANGE
+    return CONTRADICTION
 
 
 def _lineage(chunk: CandidateChunk) -> str:

@@ -5,6 +5,7 @@ import axios from 'axios'
 
 interface ChunkInfo {
   chunk_id: string
+  doc_id: string
   snippet: string
   section_heading: string | null
   doc_title: string
@@ -13,14 +14,21 @@ interface ChunkInfo {
   is_latest: boolean
 }
 
+type ResolutionType = 'prefer_source' | 'both_valid'
+
 interface ConflictRecord {
   conflict_id: string
   conflict_type: string
   nli_score: number
   detected_at: string
   detected_during: string | null
+  needs_review: boolean
   is_resolved: boolean
-  resolution_type: string | null
+  resolution_type: ResolutionType | null
+  preferred_chunk_id: string | null
+  resolution_note: string | null
+  resolved_at: string | null
+  /** For a version change: chunk_a is the earlier version, chunk_b the later. */
   chunk_a: ChunkInfo
   chunk_b: ChunkInfo
 }
@@ -30,40 +38,34 @@ interface ConflictsResponse {
   page: number
   limit: number
   conflicts: ConflictRecord[]
-  total_unresolved: number
+  total_needs_review: number
   total_resolved: number
+  total_version_changes: number
 }
+
+type Status = '' | 'needs_review' | 'resolved' | 'version_change'
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-// The detector only ever emits these two types, decided by version lineage
-// (see services/conflict_detector _classify). "scope_change" was offered as a filter option but nothing could
-// ever produce it, so the filter silently returned an empty list.
-const CONFLICT_TYPES = [
-  {
-    value: 'version_supersession',
+// The detector emits exactly these two types, decided by version lineage alone
+// (services/conflict_detector _classify). Only a contradiction is reviewed.
+const VERSION_CHANGE = 'version_supersession'
+
+const TYPE_INFO: Record<string, { label: string; help: string; badge: string }> = {
+  version_supersession: {
     label: 'Changed between versions',
-    help: 'Both passages come from versions of the same document, so the disagreement is the document changing over time. Each is correct for its own validity period.',
+    help: 'Two versions of the same document say different things. Each is correct for its own validity period, so the version history already explains it and no review is needed.',
+    badge: 'badge-accent',
   },
-  {
-    value: 'direct_contradiction',
-    label: 'Direct contradiction',
-    help: 'Two unrelated documents make conflicting claims. For current questions the clearly newer one (published more than 90 days later) is preferred; otherwise both are shown.',
+  direct_contradiction: {
+    label: 'Contradiction',
+    help: 'Two unrelated documents disagree. Until a reviewer decides, current answers prefer the source published more than 90 days later, and otherwise show both.',
+    badge: 'badge-danger',
   },
-] as const
-
-function typeLabel(t: string) {
-  return CONFLICT_TYPES.find(x => x.value === t)?.label ?? t
 }
 
-function typeHelp(t: string) {
-  return CONFLICT_TYPES.find(x => x.value === t)?.help ?? ''
-}
-
-function typeClass(t: string) {
-  return t === 'direct_contradiction' ? 'badge-danger'
-       : t === 'version_supersession' ? 'badge-warning'
-       : 'badge-accent'
+function typeInfo(t: string) {
+  return TYPE_INFO[t] ?? { label: t, help: '', badge: 'badge-accent' }
 }
 
 function nliClass(score: number) {
@@ -76,34 +78,61 @@ function fmtDate(iso: string) {
   try { return new Date(iso).toLocaleString() } catch { return iso }
 }
 
-/** Order a conflicting pair oldest-first. Undated sides keep their original order. */
-function orderByDate(a: ChunkInfo, b: ChunkInfo): [ChunkInfo, ChunkInfo] {
-  if (!a.published_at || !b.published_at) return [a, b]
-  return a.published_at <= b.published_at ? [a, b] : [b, a]
+/** "Handbook v2.0 · 2023-03-15" — enough to tell two sources apart. */
+function sourceName(c: ChunkInfo): string {
+  return [c.doc_title + (c.version_string ? ` v${c.version_string}` : ''), c.published_at]
+    .filter(Boolean)
+    .join(' · ')
 }
 
-/** Summarise which two things disagree, by version when the titles match. */
-function describePair(record: ConflictRecord): string {
-  const [older, newer] = orderByDate(record.chunk_a, record.chunk_b)
-  const v = (c: ChunkInfo) => (c.version_string ? `v${c.version_string}` : 'unversioned')
+function sideLabels(record: ConflictRecord): [string, string] {
+  return record.conflict_type === VERSION_CHANGE
+    ? ['Earlier version', 'Later version']
+    : ['Source A', 'Source B']
+}
 
-  if (older.doc_title === newer.doc_title) {
-    return `${v(older)} → ${v(newer)}`
-  }
-  return `${older.doc_title} ${v(older)} vs. ${newer.doc_title} ${v(newer)}`
+/** One-line summary of the two sides. Never infers "same document" from a title. */
+function describePair(record: ConflictRecord): string {
+  const { chunk_a: a, chunk_b: b } = record
+  const v = (c: ChunkInfo) => (c.version_string ? `v${c.version_string}` : 'unversioned')
+  if (record.conflict_type === VERSION_CHANGE) return `${a.doc_title}: ${v(a)} → ${v(b)}`
+  return `${sourceName(a)}  vs.  ${sourceName(b)}`
+}
+
+/** The decision exactly as stored — nothing implied that was not recorded. */
+function describeDecision(record: ConflictRecord): string {
+  if (record.resolution_type === 'both_valid') return 'Both are correct — not a real contradiction'
+  const winner = [record.chunk_a, record.chunk_b].find(c => c.chunk_id === record.preferred_chunk_id)
+  return winner ? `Prefer ${sourceName(winner)}` : 'Unrecognised decision'
 }
 
 // ── Chunk Side ───────────────────────────────────────────────────────────────
 
-function ChunkSide({ info, label }: { info: ChunkInfo; label: string }) {
+function ChunkSide({ info, label, verdict }: {
+  info: ChunkInfo
+  label: string
+  verdict?: 'preferred' | 'set_aside'
+}) {
   return (
     <div
       className="card"
-      style={{ flex: 1, minWidth: 0 }}
+      style={{
+        flex: 1, minWidth: 0,
+        borderColor: verdict === 'preferred' ? 'var(--success-border)'
+                   : verdict === 'set_aside' ? 'var(--danger-border)' : undefined,
+      }}
     >
       <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        <div style={{ fontSize: '10px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-          {label}
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'center' }}>
+          <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+            {label}
+          </span>
+          {verdict === 'preferred' && <span className="badge badge-success">Preferred by reviewer</span>}
+          {verdict === 'set_aside' && (
+            <span className="badge badge-danger" title="Excluded from answers about the present. Questions about the past still see it.">
+              Set aside for current answers
+            </span>
+          )}
         </div>
         <div style={{ fontWeight: 600, fontSize: '12.5px', color: 'var(--text-primary)' }}>
           {info.doc_title}
@@ -127,7 +156,7 @@ function ChunkSide({ info, label }: { info: ChunkInfo; label: string }) {
           )}
           {info.is_latest && (
             <span style={{ fontSize: '10.5px', color: 'var(--success)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '3px' }}>
-              <span className="dot dot-success" />Latest
+              <span className="dot dot-success" />Latest version
             </span>
           )}
         </div>
@@ -150,6 +179,115 @@ function ChunkSide({ info, label }: { info: ChunkInfo; label: string }) {
   )
 }
 
+// ── Decision form ────────────────────────────────────────────────────────────
+
+/** The choice in the form: a chunk id to prefer, or 'both_valid'. */
+type Choice = string | 'both_valid'
+
+function DecisionForm({ record, onSaved, onCancel }: {
+  record: ConflictRecord
+  onSaved: (updated: ConflictRecord) => void
+  onCancel: () => void
+}) {
+  const [a, b] = [record.chunk_a, record.chunk_b]
+  const [labelA, labelB] = sideLabels(record)
+  // Changing a decision starts from the recorded one; a new review starts
+  // with nothing selected, so a winner is never chosen by default.
+  const initial: Choice | null =
+    record.resolution_type === 'both_valid' ? 'both_valid' : record.preferred_chunk_id
+  const [choice,     setChoice]     = useState<Choice | null>(initial)
+  const [note,       setNote]       = useState(record.resolution_note ?? '')
+  const [submitting, setSubmitting] = useState(false)
+  const [error,      setError]      = useState<string | null>(null)
+
+  const options: { value: Choice; label: string; hint: string }[] = [
+    { value: a.chunk_id, label: `Prefer ${labelA}: ${sourceName(a)}`, hint: `${labelB} is wrong or out of date.` },
+    { value: b.chunk_id, label: `Prefer ${labelB}: ${sourceName(b)}`, hint: `${labelA} is wrong or out of date.` },
+    { value: 'both_valid', label: 'Both are correct', hint: 'They apply to different scopes or situations, or do not actually contradict.' },
+  ]
+
+  const submit = async () => {
+    if (choice === null) return
+    setSubmitting(true)
+    setError(null)
+    const body = choice === 'both_valid'
+      ? { resolution_type: 'both_valid', resolution_note: note }
+      : { resolution_type: 'prefer_source', preferred_chunk_id: choice, resolution_note: note }
+    try {
+      const { data } = await axios.post<ConflictRecord>(`/api/v1/conflicts/${record.conflict_id}/resolve`, body)
+      onSaved(data)
+    } catch (err: unknown) {
+      setError(axios.isAxiosError(err) ? (err.response?.data?.detail ?? err.message) : 'Unexpected error')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="card" style={{ background: 'var(--bg-elevated)' }}>
+      <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>Which is right?</div>
+
+        <div role="radiogroup" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {options.map(o => (
+            <label key={o.value} style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', cursor: 'pointer', fontSize: '12.5px' }}>
+              <input
+                type="radio"
+                name={`decision-${record.conflict_id}`}
+                checked={choice === o.value}
+                onChange={() => setChoice(o.value)}
+                style={{ marginTop: '3px' }}
+              />
+              <span>
+                <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{o.label}</span>
+                <span style={{ display: 'block', color: 'var(--text-muted)', fontSize: '11.5px' }}>{o.hint}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+
+        <p style={{ fontSize: '11.5px', color: 'var(--text-muted)', margin: 0 }}>
+          Preferring a source removes the other one from answers about the present.
+          Questions about the past still see both, with your decision explained.
+          Not sure? Leave it pending.
+        </p>
+
+        <div className="field">
+          <label className="field-label">Note (optional, shown to the answering model)</label>
+          <textarea
+            className="input"
+            value={note}
+            onChange={e => setNote(e.target.value)}
+            placeholder="What did you check?"
+            rows={2}
+          />
+        </div>
+
+        {error && <div className="alert alert-danger" style={{ fontSize: '12px' }}>{error}</div>}
+
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button
+            onClick={submit}
+            disabled={submitting || choice === null}
+            className="btn btn-primary"
+            style={{ fontSize: '12.5px', padding: '7px 16px' }}
+          >
+            {submitting ? (
+              <>
+                <div className="spinner" style={{ width: '13px', height: '13px', borderColor: 'rgba(255,255,255,0.3)', borderTopColor: '#fff' }} />
+                Saving…
+              </>
+            ) : 'Save decision'}
+          </button>
+          <button onClick={onCancel} className="btn btn-ghost" style={{ fontSize: '12.5px' }}>
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Conflict Row ─────────────────────────────────────────────────────────────
 
 function ConflictRow({
@@ -159,30 +297,17 @@ function ConflictRow({
   record: ConflictRecord
   onResolved?: (updated: ConflictRecord) => void
 }) {
-  const [record,         setRecord]         = useState<ConflictRecord>(initialRecord)
-  const [expanded,       setExpanded]       = useState(false)
-  const [resolveOpen,    setResolveOpen]    = useState(false)
-  const [resolutionType, setResolutionType] = useState('temporal_preference')
-  const [resolutionNote, setResolutionNote] = useState('')
-  const [submitting,     setSubmitting]     = useState(false)
-  const [resolveError,   setResolveError]   = useState<string | null>(null)
+  const [record,   setRecord]   = useState<ConflictRecord>(initialRecord)
+  const [expanded, setExpanded] = useState(false)
+  const [deciding, setDeciding] = useState(false)
 
-  const handleResolve = async () => {
-    setSubmitting(true)
-    setResolveError(null)
-    try {
-      const { data } = await axios.post<ConflictRecord>(
-        `/api/v1/conflicts/${record.conflict_id}/resolve`,
-        { resolution_type: resolutionType, resolution_note: resolutionNote },
-      )
-      setRecord(data)
-      setResolveOpen(false)
-      onResolved?.(data)
-    } catch (err: unknown) {
-      setResolveError(axios.isAxiosError(err) ? (err.response?.data?.detail ?? err.message) : 'Unexpected error')
-    } finally {
-      setSubmitting(false)
-    }
+  const isVersionChange = record.conflict_type === VERSION_CHANGE
+  const info = typeInfo(record.conflict_type)
+  const labels = sideLabels(record)
+
+  const verdictOf = (c: ChunkInfo): 'preferred' | 'set_aside' | undefined => {
+    if (!record.is_resolved || record.resolution_type !== 'prefer_source') return undefined
+    return c.chunk_id === record.preferred_chunk_id ? 'preferred' : 'set_aside'
   }
 
   return (
@@ -204,46 +329,37 @@ function ConflictRow({
           cursor: 'pointer',
         }}
       >
-        {/* Docs involved. Versions are shown because both sides are usually
-            two versions of the SAME document, where the title alone reads as
-            a meaningless "X vs. X". */}
         <div style={{ minWidth: 0 }}>
           <div style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text-primary)' }} className="truncate">
-            {record.chunk_a.doc_title}
-          </div>
-          <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }} className="truncate">
             {describePair(record)}
           </div>
+          {record.is_resolved && (
+            <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }} className="truncate">
+              {describeDecision(record)}
+            </div>
+          )}
         </div>
 
-        {/* Type badge */}
-        <span
-          className={`badge ${typeClass(record.conflict_type)}`}
-          title={typeHelp(record.conflict_type)}
-        >
-          {typeLabel(record.conflict_type)}
-        </span>
+        <span className={`badge ${info.badge}`} title={info.help}>{info.label}</span>
 
-        {/* Contradiction score. Labelled in plain language — "NLI" is an
-            implementation detail that means nothing to a reader. */}
+        {/* One decimal place: scores routinely sit at 0.997, and rounding
+            those to a flat "100%" claims a certainty the model never states. */}
         <span
           className={`badge ${nliClass(record.nli_score)}`}
           style={{ fontFamily: 'ui-monospace, monospace' }}
           title="How confident the contradiction model is that these two passages disagree."
         >
-          {/* One decimal place: scores routinely sit at 0.997, and rounding
-              those to a flat "100%" claims a certainty the model never states. */}
           {(record.nli_score * 100).toFixed(1)}% confident
         </span>
 
-        {/* Status */}
-        {record.is_resolved ? (
+        {isVersionChange ? (
+          <span className="badge badge-accent" title={info.help}>No review needed</span>
+        ) : record.is_resolved ? (
           <span className="badge badge-success">Resolved</span>
         ) : (
           <span className="badge badge-warning">Needs review</span>
         )}
 
-        {/* Chevron */}
         <span style={{
           color: 'var(--text-muted)', fontSize: '11px',
           transform: expanded ? 'rotate(180deg)' : 'none',
@@ -255,7 +371,6 @@ function ConflictRow({
       {expanded && (
         <div style={{ borderTop: '1px solid var(--border)', padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
 
-          {/* Meta row */}
           <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', fontSize: '12px', color: 'var(--text-muted)' }}>
             <span>Detected: <strong style={{ color: 'var(--text-secondary)' }}>{fmtDate(record.detected_at)}</strong></span>
             {record.detected_during && (
@@ -265,97 +380,50 @@ function ConflictRow({
             )}
           </div>
 
-          {/* Side-by-side, ordered oldest → newest so the reader can see at a
-              glance which claim the system treats as superseded. */}
           <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-            {orderByDate(record.chunk_a, record.chunk_b).map((info, i) => (
-              <ChunkSide
-                key={info.chunk_id}
-                info={info}
-                label={i === 0 ? 'Earlier claim' : 'Later claim'}
-              />
+            {[record.chunk_a, record.chunk_b].map((c, i) => (
+              <ChunkSide key={c.chunk_id} info={c} label={labels[i]} verdict={verdictOf(c)} />
             ))}
           </div>
 
-          {/* Resolve section */}
-          {!record.is_resolved ? (
-            <div>
-              {!resolveOpen ? (
-                <button
-                  onClick={() => setResolveOpen(true)}
-                  className="btn btn-secondary"
-                  style={{ fontSize: '12.5px', padding: '7px 16px' }}
-                >
-                  Mark as resolved
-                </button>
-              ) : (
-                <div
-                  className="card"
-                  style={{ background: 'var(--bg-elevated)' }}
-                >
-                  <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>Resolve this conflict</div>
-
-                    <div className="field">
-                      <label className="field-label">Resolution type</label>
-                      <select
-                        className="input"
-                        value={resolutionType}
-                        onChange={e => setResolutionType(e.target.value)}
-                      >
-                        <option value="temporal_preference">Temporal preference (newer wins)</option>
-                        <option value="manual">Manual resolution</option>
-                        <option value="scope_clarification">Scope clarification</option>
-                      </select>
-                    </div>
-
-                    <div className="field">
-                      <label className="field-label">Note (optional)</label>
-                      <textarea
-                        className="input"
-                        value={resolutionNote}
-                        onChange={e => setResolutionNote(e.target.value)}
-                        placeholder="Why was this resolved this way?"
-                        rows={2}
-                      />
-                    </div>
-
-                    {resolveError && (
-                      <div className="alert alert-danger" style={{ fontSize: '12px' }}>
-                        {resolveError}
-                      </div>
-                    )}
-
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <button
-                        onClick={handleResolve}
-                        disabled={submitting}
-                        className="btn btn-primary"
-                        style={{ fontSize: '12.5px', padding: '7px 16px' }}
-                      >
-                        {submitting ? (
-                          <>
-                            <div className="spinner" style={{ width: '13px', height: '13px', borderColor: 'rgba(255,255,255,0.3)', borderTopColor: '#fff' }} />
-                            Saving…
-                          </>
-                        ) : 'Submit resolution'}
-                      </button>
-                      <button
-                        onClick={() => { setResolveOpen(false); setResolveError(null) }}
-                        className="btn btn-ghost"
-                        style={{ fontSize: '12.5px' }}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                </div>
+          {isVersionChange ? (
+            <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', margin: 0 }}>
+              {info.help} Questions about a given time are answered from the version valid then.
+            </p>
+          ) : deciding ? (
+            <DecisionForm
+              record={record}
+              onCancel={() => setDeciding(false)}
+              onSaved={updated => { setRecord(updated); setDeciding(false); onResolved?.(updated) }}
+            />
+          ) : record.is_resolved ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '12.5px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--success)', fontWeight: 600 }}>
+                <span className="dot dot-success" />
+                Decision: {describeDecision(record)}
+              </div>
+              {record.resolution_note && (
+                <div style={{ color: 'var(--text-secondary)' }}>Note: {record.resolution_note}</div>
               )}
+              {record.resolved_at && (
+                <div style={{ color: 'var(--text-muted)', fontSize: '11.5px' }}>Decided {fmtDate(record.resolved_at)}</div>
+              )}
+              <div>
+                <button onClick={() => setDeciding(true)} className="btn btn-ghost" style={{ fontSize: '12.5px', padding: '6px 12px' }}>
+                  Change decision
+                </button>
+              </div>
             </div>
           ) : (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12.5px', color: 'var(--success)', fontWeight: 600 }}>
-              <span className="dot dot-success" />
-              Resolved — {record.resolution_type}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {record.resolution_note && (
+                <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Earlier reviewer note: {record.resolution_note}</div>
+              )}
+              <div>
+                <button onClick={() => setDeciding(true)} className="btn btn-secondary" style={{ fontSize: '12.5px', padding: '7px 16px' }}>
+                  Review
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -368,21 +436,26 @@ function ConflictRow({
 
 const LIMIT = 20
 
+const STATUS_OPTIONS: { value: Status; label: string }[] = [
+  { value: '',               label: 'All' },
+  { value: 'needs_review',   label: 'Needs review' },
+  { value: 'resolved',       label: 'Resolved' },
+  { value: 'version_change', label: 'Version changes' },
+]
+
 export default function ConflictsPage() {
-  const [data,           setData]           = useState<ConflictsResponse | null>(null)
-  const [loading,        setLoading]        = useState(false)
-  const [error,          setError]          = useState<string | null>(null)
-  const [page,           setPage]           = useState(1)
-  const [filterType,     setFilterType]     = useState<string>('')
-  const [filterResolved, setFilterResolved] = useState<string>('')
+  const [data,    setData]    = useState<ConflictsResponse | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error,   setError]   = useState<string | null>(null)
+  const [page,    setPage]    = useState(1)
+  const [status,  setStatus]  = useState<Status>('')
 
   const fetchConflicts = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
       const params: Record<string, string | number> = { page, limit: LIMIT }
-      if (filterType)       params['type']        = filterType
-      if (filterResolved !== '') params['is_resolved'] = filterResolved
+      if (status) params['status'] = status
       const { data: res } = await axios.get<ConflictsResponse>('/api/v1/conflicts', { params })
       setData(res)
     } catch (err: unknown) {
@@ -390,7 +463,7 @@ export default function ConflictsPage() {
     } finally {
       setLoading(false)
     }
-  }, [page, filterType, filterResolved])
+  }, [page, status])
 
   useEffect(() => { fetchConflicts() }, [fetchConflicts])
 
@@ -402,19 +475,18 @@ export default function ConflictsPage() {
         <h1 className="page-title">Conflicts</h1>
         <p className="page-subtitle">
           Passages that contradict each other, found while answering questions.
-          Expand one to compare both sides and record how it should be resolved.
+          Contradictions between unrelated documents need a decision; changes
+          between versions of one document are explained by its history.
         </p>
       </div>
 
-      {/* Corpus-wide counts. These come from the server rather than being
-          counted off the current page, which previously made them disagree
-          with the total as soon as there was more than one page. */}
+      {/* Corpus-wide counts, from the server rather than the current page. */}
       {data && (
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '24px' }}>
           {[
-            { label: 'Total found', value: data.total_unresolved + data.total_resolved },
-            { label: 'Needs review', value: data.total_unresolved },
-            { label: 'Resolved',    value: data.total_resolved },
+            { label: 'Needs review',    value: data.total_needs_review },
+            { label: 'Resolved',        value: data.total_resolved },
+            { label: 'Version changes', value: data.total_version_changes },
           ].map(({ label, value }) => (
             <div
               key={label}
@@ -432,25 +504,11 @@ export default function ConflictsPage() {
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '20px', alignItems: 'center' }}>
         <select
           className="input"
-          value={filterType}
-          onChange={e => { setFilterType(e.target.value); setPage(1) }}
+          value={status}
+          onChange={e => { setStatus(e.target.value as Status); setPage(1) }}
           style={{ width: 'auto', padding: '7px 32px 7px 12px' }}
         >
-          <option value="">All types</option>
-          {CONFLICT_TYPES.map(t => (
-            <option key={t.value} value={t.value}>{t.label}</option>
-          ))}
-        </select>
-
-        <select
-          className="input"
-          value={filterResolved}
-          onChange={e => { setFilterResolved(e.target.value); setPage(1) }}
-          style={{ width: 'auto', padding: '7px 32px 7px 12px' }}
-        >
-          <option value="">All statuses</option>
-          <option value="false">Needs review</option>
-          <option value="true">Resolved</option>
+          {STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
 
         <button onClick={fetchConflicts} className="btn btn-secondary" style={{ fontSize: '12.5px', padding: '7px 14px' }}>
@@ -458,12 +516,10 @@ export default function ConflictsPage() {
         </button>
       </div>
 
-      {/* Loading */}
       {loading && (
         <div className="loading-center"><div className="spinner spinner-lg" /></div>
       )}
 
-      {/* Error */}
       {error && !loading && (
         <div className="alert alert-danger">
           <svg className="alert-icon" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-11a.75.75 0 00-1.5 0v4a.75.75 0 001.5 0V7zm-.75 7.5a.75.75 0 100-1.5.75.75 0 000 1.5z" clipRule="evenodd"/></svg>
@@ -471,7 +527,6 @@ export default function ConflictsPage() {
         </div>
       )}
 
-      {/* Empty state */}
       {data && !loading && data.conflicts.length === 0 && (
         <div className="card">
           <div className="empty-state">
@@ -481,18 +536,19 @@ export default function ConflictsPage() {
               </svg>
             </div>
             <div className="empty-title">
-              {filterType || filterResolved ? 'No conflicts match' : 'No conflicts detected'}
+              {status ? 'Nothing here' : 'No conflicts detected'}
             </div>
             <p className="empty-desc">
-              {filterType || filterResolved
-                ? 'Try changing the filters above.'
-                : 'Run queries to detect contradictions between document versions.'}
+              {status === 'needs_review'
+                ? 'Every contradiction has a decision.'
+                : status
+                  ? 'Try another filter.'
+                  : 'Run queries to detect contradictions between documents.'}
             </p>
           </div>
         </div>
       )}
 
-      {/* Conflict list */}
       {data && !loading && data.conflicts.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {data.conflicts.map(r => (
@@ -505,7 +561,6 @@ export default function ConflictsPage() {
         </div>
       )}
 
-      {/* Pagination */}
       {data && totalPages > 1 && (
         <div className="pagination">
           <button

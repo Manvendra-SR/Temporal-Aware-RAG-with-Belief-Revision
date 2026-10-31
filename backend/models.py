@@ -1,8 +1,9 @@
 """
 models.py — Full SQLAlchemy ORM models for all phases.
 
-Tables are created with Base.metadata.create_all() at startup.
-Columns that aren't populated yet simply hold NULL — no migrations needed.
+Tables are created with Base.metadata.create_all() at startup. create_all()
+never alters an existing table, so schema changes to existing tables are
+applied by migrations.py, which runs right after it.
 
 Phase 1: Document, Chunk
 Phase 3: QueryLog         (added here now so create_all handles it automatically)
@@ -191,8 +192,25 @@ class QueryLog(Base):
 # ---------------------------------------------------------------------------
 
 
+# Conflict types — decided by version lineage alone (services/conflict_detector).
+VERSION_CHANGE = "version_supersession"   # same lineage: the document changed over time
+CONTRADICTION = "direct_contradiction"    # unrelated documents disagree
+
+# Human resolutions. Only a CONTRADICTION is reviewed: a version change is
+# fully explained by lineage, and no decision about it could change an answer.
+PREFER_SOURCE = "prefer_source"   # preferred_chunk_id names the side that is right
+BOTH_VALID = "both_valid"         # different scopes, or not really a contradiction
+RESOLUTION_TYPES = (PREFER_SOURCE, BOTH_VALID)
+
+
 class ConflictPair(Base):
-    """Records a detected contradiction between two chunks."""
+    """
+    Records a detected contradiction between two chunks.
+
+    Also the NLI cache: the score is stored so the pair is never re-scored.
+    A pair "needs review" exactly when it is a CONTRADICTION that is not yet
+    resolved — see needs_review().
+    """
 
     __tablename__ = "conflict_pairs"
     __table_args__ = (UniqueConstraint("chunk_id_a", "chunk_id_b"),)
@@ -211,7 +229,7 @@ class ConflictPair(Base):
         nullable=False,
     )
 
-    # "direct_contradiction" | "version_supersession" | "scope_change"
+    # VERSION_CHANGE | CONTRADICTION
     conflict_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
     nli_score: Mapped[float | None] = mapped_column(Float, nullable=True)
 
@@ -222,13 +240,30 @@ class ConflictPair(Base):
         UUID(as_uuid=False), nullable=True
     )  # query_id
 
-    # Resolution
+    # Resolution. resolution_type is one of RESOLUTION_TYPES; preferred_chunk_id
+    # is set exactly when it is PREFER_SOURCE, and is chunk_id_a or chunk_id_b
+    # (enforced by the resolve endpoint). The pair's own foreign keys already
+    # cascade, so this column needs none.
     is_resolved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     resolution_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    preferred_chunk_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), nullable=True)
     resolution_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     resolved_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+
+    def needs_review(self) -> bool:
+        return self.conflict_type == CONTRADICTION and not self.is_resolved
+
+    def has_valid_resolution(self) -> bool:
+        """True when this row carries a decision belief revision can apply."""
+        if not self.is_resolved or self.conflict_type != CONTRADICTION:
+            return False
+        if self.resolution_type == BOTH_VALID:
+            return self.preferred_chunk_id is None
+        if self.resolution_type == PREFER_SOURCE:
+            return self.preferred_chunk_id in (self.chunk_id_a, self.chunk_id_b)
+        return False
 
     def __repr__(self) -> str:
         # nli_score is nullable, so it must not be format-spec'd unconditionally

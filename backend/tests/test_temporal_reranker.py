@@ -24,6 +24,7 @@ from conftest import (
     days_before,
     make_chunk,
     pinned,
+    utc,
 )
 from services.temporal_reranker import (
     describe_filter,
@@ -95,13 +96,70 @@ class TestFilterByIntent:
         for a in (CURRENT, in_2023(), analysis("point_in_time", as_of=date(2020, 1, 1)), HISTORICAL):
             assert ids(rerank([undated], a, now=NOW)) == {"undated"}
 
-    def test_superseded_flag_excludes_from_current_even_without_valid_to(self) -> None:
-        stale = make_chunk("stale", valid_from=days_before(900), is_superseded=True)
-        assert rerank([stale], CURRENT, now=NOW) == []
 
-    def test_not_yet_published_chunk_is_not_current(self) -> None:
+
+class TestCurrentReadsTheWindowOnly:
+    """
+    For a "current" question the validity window is the whole rule;
+    is_superseded is not consulted. The flag is set when a newer version is
+    *ingested*, but that version may be dated in the future — until its date
+    arrives the parent is still the answer, and the parent's valid_to (the
+    child's publication date) is what says so.
+
+    Here NOW is 2026-01-01 and v2.0 was uploaded early, dated 2026-02-01.
+    """
+
+    SWITCH = utc(2026, 2, 1)
+
+    def future_dated_pair(self):
+        common = dict(lineage_id="policy")
+        return [
+            # What apply_lineage() leaves behind: v1 flagged, its window
+            # ending on v2's publication date.
+            make_chunk("v1", doc_id="doc-v1", valid_from=utc(2025, 1, 1), valid_to=self.SWITCH,
+                       version_string="1.0", is_latest=False, is_superseded=True, **common),
+            make_chunk("v2", doc_id="doc-v2", valid_from=self.SWITCH,
+                       version_string="2.0", **common),
+        ]
+
+    def test_future_dated_v2_does_not_hide_the_currently_valid_v1(self) -> None:
+        assert ids(rerank(self.future_dated_pair(), CURRENT, now=NOW)) == {"v1"}
+
+    def test_v1_still_answers_on_the_last_day_before_the_switch(self) -> None:
+        result = rerank(self.future_dated_pair(), CURRENT, now=utc(2026, 1, 31))
+        assert ids(result) == {"v1"}
+
+    def test_v1_expires_on_the_day_v2_becomes_valid(self) -> None:
+        assert ids(rerank(self.future_dated_pair(), CURRENT, now=self.SWITCH)) == {"v2"}
+
+    def test_future_dated_document_is_excluded(self) -> None:
         future = make_chunk("future", valid_from=NOW.replace(year=2027))
         assert rerank([future], CURRENT, now=NOW) == []
+
+    def test_expired_document_is_excluded(self) -> None:
+        expired = make_chunk("expired", valid_from=days_before(900), valid_to=days_before(1))
+        assert rerank([expired], CURRENT, now=NOW) == []
+
+    def test_window_ending_today_is_excluded(self) -> None:
+        # [valid_from, valid_to): the end day already belongs to the next version.
+        ends_today = make_chunk("ends_today", valid_from=days_before(900), valid_to=NOW)
+        assert rerank([ends_today], CURRENT, now=NOW) == []
+
+    def test_an_expired_window_excludes_even_without_the_flag(self) -> None:
+        unflagged = make_chunk("unflagged", valid_from=days_before(900),
+                               valid_to=days_before(30), is_superseded=False)
+        assert rerank([unflagged], CURRENT, now=NOW) == []
+
+    def test_legacy_row_without_valid_to_is_treated_as_open_ended(self) -> None:
+        # A missing valid_to means "still valid", whatever the flag says. The
+        # resolver always stamps both together, so a flagged row with no
+        # valid_to can only be legacy data; the window, not the flag, decides.
+        legacy = make_chunk("legacy", valid_from=days_before(900), is_superseded=True)
+        assert ids(rerank([legacy], CURRENT, now=NOW)) == {"legacy"}
+
+    def test_legacy_row_without_any_dates_is_always_current(self) -> None:
+        legacy = make_chunk("legacy", is_superseded=True)
+        assert ids(rerank([legacy], CURRENT, now=NOW)) == {"legacy"}
 
 
 class TestRankingIsRelevanceOnly:

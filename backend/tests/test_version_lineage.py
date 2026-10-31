@@ -13,15 +13,17 @@ lock so a concurrent ingest cannot slip past.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 import models  # noqa: F401 — registers the tables on Base
+from conftest import CURRENT
 from database import Base
 from models import Chunk, Document
+from services.temporal_reranker import is_temporally_valid
 from services.version_resolver import apply_lineage, lineage_roots, validate_lineage
 
 
@@ -92,6 +94,52 @@ class TestValidityWindows:
 
         assert naive(chunk_of(db, v1).valid_to) == naive(utc(2023, 3, 15))
         assert naive(chunk_of(db, v2).valid_to) == naive(utc(2025, 2, 1))
+
+    def test_every_superseded_chunk_has_its_window_closed(self, db) -> None:
+        # The CURRENT filter reads only the window, so supersession must never
+        # flag a chunk without also giving it a valid_to.
+        v1 = ingest(db, "1.0", utc(2022, 1, 10))
+        v2 = ingest(db, "2.0", utc(2023, 3, 15), parent=v1)
+        ingest(db, "3.0", utc(2025, 2, 1), parent=v2)
+        flagged = db.query(Chunk).filter(Chunk.is_superseded == True).all()  # noqa: E712
+        assert len(flagged) == 2
+        assert all(c.valid_to is not None for c in flagged)
+
+
+def current_versions(db, today: date) -> set[str]:
+    """Which versions the CURRENT filter keeps on `today`, read from the DB rows."""
+    return {
+        db.get(Document, c.doc_id).version_string
+        for c in db.query(Chunk).all()
+        if is_temporally_valid(c, CURRENT, today)
+    }
+
+
+class TestFutureDatedVersion:
+    """
+    v2.0 is uploaded on 2026-01-01 but dated 2026-02-01. Ingestion supersedes
+    v1.0 immediately (flag set, valid_to = 2026-02-01); the CURRENT filter must
+    still hand the present to v1.0 until v2.0's date arrives.
+    """
+
+    @pytest.fixture
+    def pair(self, db):
+        v1 = ingest(db, "1.0", utc(2025, 1, 1))
+        v2 = ingest(db, "2.0", utc(2026, 2, 1), parent=v1)
+        return v1, v2
+
+    def test_v1_is_flagged_but_its_window_runs_to_v2s_date(self, db, pair) -> None:
+        v1, _ = pair
+        c1 = chunk_of(db, v1)
+        assert (naive(c1.valid_to), c1.is_superseded) == (naive(utc(2026, 2, 1)), True)
+
+    def test_v1_answers_current_questions_until_v2s_date(self, db, pair) -> None:
+        assert current_versions(db, date(2026, 1, 1)) == {"1.0"}
+        assert current_versions(db, date(2026, 1, 31)) == {"1.0"}
+
+    def test_v2_takes_over_on_its_date(self, db, pair) -> None:
+        assert current_versions(db, date(2026, 2, 1)) == {"2.0"}
+        assert current_versions(db, date(2027, 1, 1)) == {"2.0"}
 
 
 class TestChainGuards:

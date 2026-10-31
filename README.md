@@ -39,10 +39,13 @@ Built with FastAPI, PostgreSQL, FAISS + BM25, a Hugging Face NLI model, Groq
    different documents contradict each other. Two versions of the same document
    are labelled a *version change*; unrelated documents are a *contradiction*.
 6. **Belief revision.** Simple rules decide what to do with each conflict. A
-   source is only dropped for questions about the present, and only when the
-   sources are unrelated and one is clearly newer. For past questions, both are
-   kept and the LLM is told each one's validity dates. The answer gets a
-   confidence level.
+   source is only dropped for questions about the present: when a reviewer
+   preferred the other side, or (until someone reviews it) when the sources are
+   unrelated and one is clearly newer. For past questions, both are kept and the
+   LLM is told each one's validity dates and any reviewer decision. The answer
+   gets a confidence level.
+   Only contradictions between unrelated documents need review; a version
+   change is explained by the document's own history.
 7. **Answer.** The LLM writes a cited answer from sources labelled with their
    validity windows.
 
@@ -212,7 +215,7 @@ steps are in [`evaluation/README.md`](evaluation/README.md).
 | GET | `/api/v1/documents` | List documents |
 | GET | `/api/v1/documents/{id}/lineage` | Version chain of a document |
 | DELETE | `/api/v1/documents/{id}` | Delete a document (only if no later version depends on it) |
-| GET | `/api/v1/conflicts` | Detected contradictions |
-| POST | `/api/v1/conflicts/{id}/resolve` | Record a manual resolution |
+| GET | `/api/v1/conflicts` | Detected conflicts (`status=needs_review\|resolved\|version_change`) |
+| POST | `/api/v1/conflicts/{id}/resolve` | Record or change a decision: `prefer_source` + `preferred_chunk_id`, or `both_valid` |
 
 Once the backend is running, interactive API docs (Swagger UI) are available at `http://localhost:8000/docs`.

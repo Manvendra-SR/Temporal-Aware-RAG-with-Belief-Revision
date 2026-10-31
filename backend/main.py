@@ -45,6 +45,8 @@ async def lifespan(app: FastAPI):
     log.info("Running Base.metadata.create_all() …")
     import models  # noqa: F401 — import triggers model registration with Base
     Base.metadata.create_all(bind=engine)
+    import migrations
+    migrations.upgrade(engine)
     log.info("Database tables ready.")
 
     # 2. Load embedding model (downloads on first run, ~90 MB cached)

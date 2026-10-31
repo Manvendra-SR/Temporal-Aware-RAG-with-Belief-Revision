@@ -31,7 +31,12 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models import Chunk, ConflictPair, Document, QueryLog
+from models import CONTRADICTION, Chunk, ConflictPair, Document, QueryLog
+
+# "Unresolved" in every count below means "needs a reviewer": a contradiction
+# between unrelated documents with no decision yet. A change between versions
+# of one document is explained by its lineage and is never pending.
+NEEDS_REVIEW = (ConflictPair.conflict_type == CONTRADICTION) & ConflictPair.is_resolved.is_(False)
 from services.version_resolver import version_sort_key
 
 log = logging.getLogger(__name__)
@@ -90,7 +95,7 @@ def analytics_overview(db: Session = Depends(get_db)) -> OverviewResponse:
     total_conflicts = db.query(func.count(ConflictPair.conflict_id)).scalar() or 0
     unresolved = (
         db.query(func.count(ConflictPair.conflict_id))
-        .filter(ConflictPair.is_resolved.is_(False))
+        .filter(NEEDS_REVIEW)
         .scalar() or 0
     )
     total_queries = db.query(func.count(QueryLog.query_id)).scalar() or 0
@@ -152,7 +157,7 @@ def analytics_timeline(db: Session = Depends(get_db)) -> TimelineResponse:
     # conflict are loaded, rather than the whole chunks table as before.
     unresolved_pairs = (
         db.query(ConflictPair.chunk_id_a, ConflictPair.chunk_id_b)
-        .filter(ConflictPair.is_resolved.is_(False))
+        .filter(NEEDS_REVIEW)
         .all()
     )
     conflicted_chunk_ids = {

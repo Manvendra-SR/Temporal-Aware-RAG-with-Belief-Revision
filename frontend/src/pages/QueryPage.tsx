@@ -29,6 +29,8 @@ interface SourceResult {
   has_conflict: boolean
   used_in_answer: boolean
   excluded_reason: string | null
+  /** True only when this source won a conflict; false on both sides of a kept-both conflict. */
+  preferred: boolean
 }
 
 interface ConflictInfo {
@@ -342,19 +344,26 @@ function ConflictDetailsPanel({
             const b = sourceMap.get(pair.chunk_id_b)
             return (
               <div key={i} style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                {[a, b].map((src, j) => src ? (
+                {[a, b].map((src, j) => {
+                  if (!src) return null
+                  // Only claim a winner the backend actually chose. A conflict that
+                  // keeps both sides (a version change, a "both valid" decision, an
+                  // unresolved contradiction, any question about the past) has none.
+                  const verdict = src.excluded_reason
+                    ? { label: 'Set aside', border: 'var(--danger-border)', color: 'var(--danger)' }
+                    : src.preferred
+                      ? { label: 'Preferred', border: 'var(--success-border)', color: 'var(--success)' }
+                      : { label: 'Kept — both shown', border: 'var(--border)', color: 'var(--text-muted)' }
+                  return (
                   <div
                     key={j}
                     className="card"
-                    style={{
-                      flex: 1, minWidth: '180px',
-                      borderColor: src.excluded_reason ? 'var(--danger-border)' : 'var(--success-border)',
-                    }}
+                    style={{ flex: 1, minWidth: '180px', borderColor: verdict.border }}
                   >
                     <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                       <div style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px',
-                                    color: src.excluded_reason ? 'var(--danger)' : 'var(--success)' }}>
-                        {src.excluded_reason ? 'Set aside' : 'Preferred'}
+                                    color: verdict.color }}>
+                        {verdict.label}
                       </div>
                       <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)' }}>
                         {src.doc_title}{src.version_string ? ` v${src.version_string}` : ''}
@@ -365,7 +374,8 @@ function ConflictDetailsPanel({
                       </div>
                     </div>
                   </div>
-                ) : null)}
+                  )
+                })}
               </div>
             )
           })}

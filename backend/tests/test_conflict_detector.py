@@ -4,21 +4,31 @@ ordering (which underpins cache correctness and idempotency), the cheap pair
 selection gate, and conflict classification.
 
 The NLI model itself is not exercised — it is a downloaded neural network, so
-its behaviour belongs to an integration test, not a unit test.
+its behaviour belongs to an integration test, not a unit test. The caching
+tests replace it with a fake that records every call, against a real
+(in-memory SQLite) conflict_pairs table.
 """
 
 from __future__ import annotations
 
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
+import models  # noqa: F401 — registers the tables on Base
 from conftest import ceo_versions, days_before, make_chunk, press_release
+from database import Base
+from models import CONTRADICTION, VERSION_CHANGE, ConflictPair
+from services import nli
 from services.conflict_detector import (
     NLI_THRESHOLD,
     _canonical,
     _classify,
     _lexical_cosine,
+    _nli_input,
     _select_pairs,
     _shares_entity,
+    detect,
 )
 
 
@@ -163,3 +173,120 @@ class TestClassification:
         _, _, v3 = ceo_versions()
         press = press_release()
         assert _classify(v3, press, 0.9) == _classify(press, v3, 0.9)
+
+
+class TestClassificationAcrossLineages:
+    """Version numbers are only meaningful within one lineage."""
+
+    def test_identical_versions_of_independent_documents_are_a_contradiction(self) -> None:
+        a = make_chunk("a", doc_id="handbook", version_string="1.0", lineage_id="handbook")
+        b = make_chunk("b", doc_id="press", version_string="1.0", lineage_id="press")
+        assert _classify(a, b, 0.9) == CONTRADICTION
+
+    def test_different_versions_of_independent_documents_are_a_contradiction(self) -> None:
+        a = make_chunk("a", doc_id="handbook", version_string="3.0", lineage_id="handbook")
+        b = make_chunk("b", doc_id="press", version_string="1.0", lineage_id="press")
+        assert _classify(a, b, 0.9) == CONTRADICTION
+
+    @pytest.mark.parametrize("dates", ["identical", "missing"])
+    def test_dates_play_no_part_for_versions_of_one_lineage(self, dates) -> None:
+        when = days_before(10) if dates == "identical" else None
+        a = make_chunk("a", doc_id="v1", lineage_id="L", valid_from=when)
+        b = make_chunk("b", doc_id="v2", lineage_id="L", valid_from=when)
+        assert _classify(a, b, 0.9) == VERSION_CHANGE
+
+
+class TestNliInputOrder:
+    def test_a_pair_is_scored_in_the_same_order_whichever_way_it_arrives(self) -> None:
+        # NLI is directional; the cached score must not depend on retrieval order.
+        a = make_chunk("aaa", content="premise")
+        b = make_chunk("bbb", content="hypothesis")
+        assert _nli_input(a, b) == _nli_input(b, a) == ("premise", "hypothesis")
+
+
+# ── Caching, against a real table ────────────────────────────────────────────
+
+
+@pytest.fixture
+def db():
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    session = sessionmaker(bind=engine)()
+    yield session
+    session.close()
+
+
+class FakeNli:
+    def __init__(self, monkeypatch, score: float = 0.95):
+        self.calls: list[list[tuple[str, str]]] = []
+        self.score = score
+        monkeypatch.setattr(nli, "is_loaded", lambda: True)
+        monkeypatch.setattr(nli, "predict", self.predict)
+
+    def predict(self, pairs):
+        self.calls.append(list(pairs))
+        return [self.score] * len(pairs)
+
+
+# Hex letters matter: SQLite gives a column declared UUID numeric affinity,
+# so an all-digit id would be stored as an integer.
+C1 = "aaaaaaaa-0000-0000-0000-00000000000a"
+C2 = "bbbbbbbb-0000-0000-0000-00000000000b"
+
+
+def two_versions():
+    return [
+        make_chunk(C1, doc_id="d1", lineage_id="L", content="MultiheadAttention is recommended."),
+        make_chunk(C2, doc_id="d2", lineage_id="L", content="MultiheadAttention is deprecated."),
+    ]
+
+
+def stored(db, *, conflict_type, score=0.95, **fields) -> ConflictPair:
+    row = ConflictPair(conflict_id="cccccccc-0000-0000-0000-00000000000c", chunk_id_a=C1, chunk_id_b=C2,
+                       conflict_type=conflict_type, nli_score=score, **fields)
+    db.add(row)
+    db.commit()
+    return row
+
+
+class TestCaching:
+    def test_a_new_pair_is_scored_once_and_then_served_from_the_table(self, db, monkeypatch) -> None:
+        fake = FakeNli(monkeypatch)
+        first = detect(two_versions(), db)
+        second = detect(list(reversed(two_versions())), db)
+
+        assert len(fake.calls) == 1                       # second query ran no NLI
+        assert [(r.conflict_type, r.is_cached) for r in first] == [(VERSION_CHANGE, False)]
+        assert [(r.conflict_type, r.is_cached) for r in second] == [(VERSION_CHANGE, True)]
+        assert db.query(ConflictPair).count() == 1
+
+    def test_a_cached_row_with_a_stale_type_is_retyped_from_lineage(self, db, monkeypatch) -> None:
+        # Rows written under the old date-gap rule could call a version change
+        # a contradiction; loading the row corrects it, without any NLI call.
+        fake = FakeNli(monkeypatch)
+        row = stored(db, conflict_type=CONTRADICTION)
+        results = detect(two_versions(), db)
+        assert fake.calls == []
+        assert results[0].conflict_type == VERSION_CHANGE
+        db.refresh(row)
+        assert row.conflict_type == VERSION_CHANGE
+
+    def test_retyping_leaves_a_reviewers_decision_in_place(self, db, monkeypatch) -> None:
+        FakeNli(monkeypatch)
+        row = stored(db, conflict_type=CONTRADICTION, is_resolved=True,
+                     resolution_type="both_valid", resolution_note="kept")
+        detect(two_versions(), db)
+        db.refresh(row)
+        assert (row.is_resolved, row.resolution_note) == (True, "kept")
+
+    def test_a_cached_score_below_the_threshold_is_not_a_conflict(self, db, monkeypatch) -> None:
+        FakeNli(monkeypatch)
+        stored(db, conflict_type=VERSION_CHANGE, score=NLI_THRESHOLD - 0.01)
+        assert detect(two_versions(), db) == []
+
+    def test_same_document_chunks_never_reach_nli(self, db, monkeypatch) -> None:
+        fake = FakeNli(monkeypatch)
+        chunks = two_versions()
+        chunks[1].doc_id = "d1"
+        assert detect(chunks, db) == []
+        assert fake.calls == []

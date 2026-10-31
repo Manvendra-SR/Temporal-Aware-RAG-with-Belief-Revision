@@ -104,6 +104,9 @@ class SourceResult(BaseModel):
     used_in_answer: bool = False
     # Set when belief revision dropped this chunk, explaining why in plain English.
     excluded_reason: Optional[str] = None
+    # True only when this chunk won a conflict (the other side was excluded in
+    # its favour). Both sides of a kept-both conflict are False: neither won.
+    preferred: bool = False
     # 1-based position in the final ranking.
     rank: int = 0
 
@@ -302,6 +305,7 @@ def query_endpoint(
     latency_ms = int((time.monotonic() - t_start) * 1000)
 
     # ── 4. Build source cards ─────────────────────────────────────────────────
+    preferred_ids = set(revision.preferred_chunks)
     sources = [
         SourceResult(
             chunk_id=c.chunk_id,
@@ -324,6 +328,7 @@ def query_endpoint(
             has_conflict=(c.chunk_id in conflicted_ids),
             used_in_answer=(c.chunk_id in used_in_answer),
             excluded_reason=revision.exclusion_reasons.get(c.chunk_id),
+            preferred=(c.chunk_id in preferred_ids),
         )
         for i, c in enumerate(candidates, start=1)
     ]

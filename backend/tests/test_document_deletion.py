@@ -16,7 +16,7 @@ from the BM25 corpus, and the documents around it stay searchable.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 import numpy as np
 import pytest
@@ -27,11 +27,13 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 import models  # noqa: F401 — registers the tables on Base
+from conftest import CURRENT
 from database import Base, get_db
 from models import Chunk, Document
 from routers import ingest as ingest_router
 from services import bm25_store, faiss_store
 from services.embedder import EMBEDDING_DIM
+from services.temporal_reranker import is_temporally_valid
 from services.version_resolver import apply_lineage, validate_lineage
 
 
@@ -205,6 +207,24 @@ class TestLineagePolicy:
         assert v2.is_latest is True
         c2 = chunk_of(db, v2)
         assert (c2.valid_to, c2.is_superseded) == (None, False)
+
+    def test_deleting_a_future_dated_version_gives_the_present_back_to_its_parent(
+        self, client, db, indexes,
+    ) -> None:
+        # v2.0 was uploaded early, dated 2026-02-01, then withdrawn. Rollback
+        # must reopen v1.0's window, or v1.0 would expire on that date with
+        # nothing to replace it.
+        v1 = ingest(db, "1.0", utc(2025, 1, 1))
+        v2 = ingest(db, "2.0", utc(2026, 2, 1), parent=v1)
+        assert not is_temporally_valid(chunk_of(db, v1), CURRENT, date(2026, 2, 1))
+
+        assert client.delete(f"/api/v1/documents/{v2.doc_id}").status_code == 200
+        db.expire_all()
+
+        c1 = chunk_of(db, v1)
+        assert (c1.valid_to, c1.is_superseded) == (None, False)
+        for today in (date(2026, 1, 1), date(2026, 2, 1), date(2030, 1, 1)):
+            assert is_temporally_valid(c1, CURRENT, today)
 
     def test_the_older_versions_are_untouched(self, client, db, chain) -> None:
         # Deleting v3 must restore v2 only. v1's window closed when v2 was

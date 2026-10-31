@@ -24,6 +24,7 @@ from conftest import (
     pinned,
     press_release,
 )
+from models import BOTH_VALID, CONTRADICTION, PREFER_SOURCE, VERSION_CHANGE, ConflictPair
 from services.belief_revision import CONTRADICTION_RECENCY_GAP_DAYS, revise
 from services.conflict_detector import ConflictResult
 
@@ -51,13 +52,15 @@ PAST_INTENTS = [
 ]
 
 
-class StoredResolution:
-    """Stand-in for a resolved ConflictPair row."""
-
-    def __init__(self, resolution_type: str, note: str = ""):
-        self.resolution_type = resolution_type
-        self.resolution_note = note
-        self.is_resolved = True
+def decision(resolution_type: str, preferred: str | None = None, *, note: str = "",
+             conflict_type: str = CONTRADICTION, a: str = "old", b: str = "new") -> FakeSession:
+    """A session holding one reviewed ConflictPair row for the pair (a, b)."""
+    row = ConflictPair(
+        conflict_id="c1", chunk_id_a=a, chunk_id_b=b, conflict_type=conflict_type,
+        nli_score=0.9, is_resolved=True, resolution_type=resolution_type,
+        preferred_chunk_id=preferred, resolution_note=note or None,
+    )
+    return FakeSession({(a, b): row})
 
 
 class TestNoConflicts:
@@ -225,41 +228,94 @@ class TestConfidenceAggregation:
         assert len(result.conflict_notices) == 2
 
 
-class TestStoredResolutions:
-    def test_temporal_preference_excludes_the_older_chunk_for_the_present(self) -> None:
-        """
-        Regression: stored resolutions used to exclude nothing while reporting
-        "high" confidence, so resolving a conflict made retrieval strictly
-        worse than leaving it pending.
-        """
-        session = FakeSession({("old", "new"): StoredResolution("temporal_preference")})
-        result = revise(unrelated_pair(20), [conflict("direct_contradiction", "old", "new")],
-                        session, CURRENT)
-        assert result.exclude_chunks == ["old"]
-        assert result.preferred_chunks == ["new"]
+def contradiction(chunks, session, intent):
+    return revise(chunks, [conflict(CONTRADICTION, "old", "new")], session, intent)
+
+
+class TestPreferSource:
+    """The reviewer names the side that is right; dates play no part."""
+
+    @pytest.mark.parametrize("winner, loser", [("new", "old"), ("old", "new")])
+    def test_current_question_excludes_exactly_the_other_side(self, winner, loser) -> None:
+        result = contradiction(unrelated_pair(20), decision(PREFER_SOURCE, winner), CURRENT)
+        assert result.exclude_chunks == [loser]
+        assert result.include_chunks == [winner]
+        assert result.preferred_chunks == [winner]
         assert result.answer_confidence == "high"
+        assert "reviewer" in result.exclusion_reasons[loser].lower()
+
+    def test_reviewer_can_prefer_the_older_source_over_automatic_recency(self) -> None:
+        # Left pending, the 400-day gap would make the newer side win; the
+        # reviewer's decision replaces that rule.
+        result = contradiction(unrelated_pair(400), decision(PREFER_SOURCE, "old"), CURRENT)
+        assert result.exclude_chunks == ["new"]
+
+    def test_a_rejected_newer_claim_is_not_called_superseded(self) -> None:
+        notice = contradiction(unrelated_pair(400), decision(PREFER_SOURCE, "old"),
+                               CURRENT).conflict_notices[0]
+        assert "Arjun is the CEO." in notice          # quoted, so the model can explain
+        assert "set-aside" in notice
+        assert "superseded" not in notice.lower()
+
+    @pytest.mark.parametrize("dates", ["identical", "missing"])
+    def test_works_when_dates_cannot_order_the_pair(self, dates) -> None:
+        # Regression: temporal_preference picked "the newer" by date, which for
+        # tied or missing dates fell back to UUID order — an arbitrary winner.
+        chunks = unrelated_pair(0) if dates == "identical" else unrelated_pair(400)
+        if dates == "missing":
+            for c in chunks:
+                c.valid_from = None
+        for winner, loser in (("old", "new"), ("new", "old")):
+            result = contradiction(chunks, decision(PREFER_SOURCE, winner), CURRENT)
+            assert result.exclude_chunks == [loser]
 
     @pytest.mark.parametrize("a", PAST_INTENTS)
-    def test_temporal_preference_keeps_both_for_the_past(self, a) -> None:
-        session = FakeSession({("old", "new"): StoredResolution("temporal_preference")})
-        result = revise(unrelated_pair(20), [conflict("direct_contradiction", "old", "new")],
-                        session, a)
+    def test_past_questions_keep_both_and_explain_the_decision(self, a) -> None:
+        result = contradiction(unrelated_pair(400), decision(PREFER_SOURCE, "new"), a)
         assert result.exclude_chunks == []
+        assert result.preferred_chunks == []
         assert result.answer_confidence == "high"
+        notice = result.conflict_notices[0]
+        assert "may still describe its own period" in notice
+        assert "rely on Press Release" in notice
 
-    def test_scope_clarification_keeps_both_at_high_confidence(self) -> None:
-        session = FakeSession({("old", "new"): StoredResolution("scope_clarification")})
-        result = revise(unrelated_pair(400), [conflict("direct_contradiction", "old", "new")],
-                        session, CURRENT)
+    def test_reviewer_note_reaches_the_model(self) -> None:
+        result = contradiction(unrelated_pair(20),
+                               decision(PREFER_SOURCE, "new", note="checked the registry"), CURRENT)
+        assert "Reviewer note: checked the registry" in result.conflict_notices[0]
+
+
+class TestBothValid:
+    @pytest.mark.parametrize("a", [pytest.param(CURRENT, id="current"), *PAST_INTENTS])
+    def test_keeps_both_at_high_confidence_for_every_intent(self, a) -> None:
+        result = contradiction(unrelated_pair(400), decision(BOTH_VALID), a)
         assert result.exclude_chunks == []
+        assert result.preferred_chunks == []
         assert result.answer_confidence == "high"
+        assert "do not actually contradict" in result.conflict_notices[0]
 
-    def test_manual_resolution_keeps_both_at_medium_confidence(self) -> None:
-        # A human adjudicated but recorded no winner, so nothing can be dropped
-        # automatically and confidence must not claim otherwise.
-        session = FakeSession({("old", "new"): StoredResolution("manual", "checked upstream")})
-        result = revise(unrelated_pair(400), [conflict("direct_contradiction", "old", "new")],
-                        session, CURRENT)
+
+class TestDecisionsThatDoNotApply:
+    """Anything that is not a well-formed decision on a contradiction is ignored."""
+
+    def automatic(self, session):
+        # With a 400-day gap the automatic rule excludes "old" at medium.
+        result = contradiction(unrelated_pair(400), session, CURRENT)
+        assert (result.exclude_chunks, result.answer_confidence) == (["old"], "medium")
+
+    def test_preferred_chunk_outside_the_pair(self) -> None:
+        self.automatic(decision(PREFER_SOURCE, "someone-else"))
+
+    def test_prefer_source_without_a_preferred_chunk(self) -> None:
+        self.automatic(decision(PREFER_SOURCE, None))
+
+    @pytest.mark.parametrize("legacy", ["temporal_preference", "scope_clarification", "manual"])
+    def test_unmigrated_legacy_types(self, legacy) -> None:
+        self.automatic(decision(legacy))
+
+    def test_a_decision_stored_on_a_version_change_is_ignored(self) -> None:
+        v1, v2, _ = ceo_versions()
+        session = decision(PREFER_SOURCE, "v1", conflict_type=VERSION_CHANGE, a="v1", b="v2")
+        result = revise([v1, v2], [conflict(VERSION_CHANGE, "v1", "v2")], session, HISTORICAL)
+        assert "VERSION CHANGE" in result.conflict_notices[0]
         assert result.exclude_chunks == []
-        assert result.answer_confidence == "medium"
-        assert any("checked upstream" in n for n in result.conflict_notices)
